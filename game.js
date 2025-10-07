@@ -1,7 +1,8 @@
 /*
-    Vics Tower Defense - Revision 14 (Critical Bugfix)
-    - Fixed a ReferenceError that prevented waves from generating by re-inserting the missing EnemyTypes constant.
-    - Game progression beyond wave 1 is now restored.
+    Vics Tower Defense - Revision 15 (Final Skill Tree Patch)
+    - Fixed critical bug where upgrading a skill to level 2+ would cause a game state mismatch and crash.
+    - Rearchitected skill application logic to be robust and stateless by recalculating all bonuses on every change.
+    - Renamed and repurposed applyAllSkillEffects to be the single source of truth for stat calculation.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -13,18 +14,12 @@ const TD_CONFIG = {
 };
 
 const MAXS = {
-    HERO_DAMAGE: 10000,
-    HERO_RANGE: 500,
-    HERO_FIRE_RATE: 20,
-    CRIT_CHANCE: 90,
-    CASTLE_HP: 10000,
-    HERO_SPEED: 250,
+    HERO_DAMAGE: 10000, HERO_RANGE: 500, HERO_FIRE_RATE: 20,
+    CRIT_CHANCE: 90, CASTLE_HP: 10000, HERO_SPEED: 250,
 };
 
 const UPGRADE_COST_MULT = 1.18;
-const ABILITY_COOLDOWNS = {
-    empBlast: 45000
-};
+const ABILITY_COOLDOWNS = { empBlast: 45000 };
 
 // ---------------------------- Canvas & Context Setup ----------------------------
 let canvas = null, ctx = null, canvasWidth = 0, canvasHeight = 0;
@@ -33,14 +28,11 @@ function setupCanvas() {
     ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
-    canvasWidth = rect.width;
-    canvasHeight = rect.height;
+    canvasWidth = rect.width; canvasHeight = rect.height;
     ctx.font = 'bold 16px "Orbitron", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 }
 
 // ---------------------------- Game Path Generation ----------------------------
@@ -161,7 +153,7 @@ const particlePool = {
     }
 };
 
-// ---------------------------- Skill Tree System ----------------------------
+// ---------------------------- Skill Tree System (PATCHED) ----------------------------
 const SkillTree = {
     multiShot: { id: 'multiShot', name: 'Multi-Shot', maxLevel: 10, unlockWave: 10, requires: null, cost: 500, description: 'Fire +1 projectile at a nearby target.' },
     piercingShot: { id: 'piercingShot', name: 'Piercing Shot', maxLevel: 10, unlockWave: 15, requires: 'multiShot', cost: 800, description: 'Projectiles pierce +1 enemy.' },
@@ -175,30 +167,47 @@ const SkillTree = {
 
 const SkillManager = {
     levels: {},
-    init() { Object.keys(SkillTree).forEach(key => this.levels[key] = 0); },
+    init() {
+        Object.keys(SkillTree).forEach(key => this.levels[key] = 0);
+    },
     getSkillLevel(id) { return this.levels[id] || 0; },
     getSkillCost(id) {
         const skill = SkillTree[id]; if (!skill) return Infinity;
         return Math.floor(skill.cost * Math.pow(1.5, this.getSkillLevel(id)));
     },
     purchaseSkill(id) {
-        const skill = SkillTree[id]; const level = this.getSkillLevel(id); const cost = this.getSkillCost(id);
+        const skill = SkillTree[id];
+        const level = this.getSkillLevel(id);
+        const cost = this.getSkillCost(id);
         if (TDState.gold >= cost && level < skill.maxLevel) {
-            TDState.gold -= cost; this.levels[id]++; this.applySkillEffects(id, 1);
-            AudioManager.play('upgrade'); renderSkillTree(); return true;
+            TDState.gold -= cost;
+            this.levels[id]++;
+            this.recalculateAllSkillEffects(); // Recalculate everything to ensure consistency
+            AudioManager.play('upgrade');
+            renderSkillTree();
+            return true;
         }
-        AudioManager.play('error'); return false;
+        AudioManager.play('error');
+        return false;
     },
-    applySkillEffects(id, levels) {
-        if (id === 'legolas') TDState.hero.fireRate += 0.5 * levels;
-        if (id === 'godSpeed') TDState.hero.speed = Math.min(MAXS.HERO_SPEED, TDState.hero.speed + (10 * levels));
-        if (id === 'follower' && !TDState.follower) TDState.follower = new Follower(TDState.hero);
-    },
-    applyAllLoadedEffects() {
-        Object.keys(this.levels).forEach(id => {
-            const level = this.getSkillLevel(id);
-            if (level > 0) this.applySkillEffects(id, level);
-        });
+    recalculateAllSkillEffects() {
+        // Reset stats to their base values before applying all skill bonuses
+        TDState.hero.speed = 150;
+        TDState.hero.fireRate = 1.2 + (UpgradeManager.levels.fireRate * 0.15); // Include normal upgrades
+        
+        // Apply all skill levels from scratch
+        const legolasLevels = this.getSkillLevel('legolas');
+        if (legolasLevels > 0) TDState.hero.fireRate += 0.5 * legolasLevels;
+
+        const godSpeedLevels = this.getSkillLevel('godSpeed');
+        if (godSpeedLevels > 0) TDState.hero.speed = Math.min(MAXS.HERO_SPEED, TDState.hero.speed + (10 * godSpeedLevels));
+
+        if (this.getSkillLevel('follower') > 0 && !TDState.follower) {
+            TDState.follower = new Follower(TDState.hero);
+        }
+        
+        // Ensure stats don't exceed max values
+        TDState.hero.fireRate = Math.min(MAXS.HERO_FIRE_RATE, TDState.hero.fireRate);
     }
 };
 
@@ -224,7 +233,7 @@ class Castle {
     draw(ctx) {}
 }
 
-// ---------------------------- Enemy Definitions & Class (FIXED) ----------------------------
+// ---------------------------- Enemy Class ----------------------------
 const EnemyTypes = {
     NORMAL: { hp: 30, speed: 40, reward: 5, size: 20, color: '#ff6b6b' },
     TANK: { hp: 100, speed: 25, reward: 10, size: 30, color: '#4834d4' },
@@ -401,7 +410,9 @@ class Hero {
         if (rapidFireLevel > 0) {
             for (let i = 1; i <= rapidFireLevel; i++) {
                 setTimeout(() => {
-                    if (target.active) shootProjectile(this.x, this.y, target, this.damage * 0.5, this.crit, true);
+                    // Re-acquire target in case the original died
+                    const currentTarget = this.findTarget();
+                    if(currentTarget) shootProjectile(this.x, this.y, currentTarget, this.damage * 0.5, this.crit, true);
                 }, 100 * i);
             }
         }
@@ -472,16 +483,12 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
     for (let i = 0; i < 1 + spreadLevel; i++) {
         let p = TDState.projectiles.find(pr => !pr.active);
         if (!p) { p = new Projectile(); TDState.projectiles.push(p); }
-        
         const dirX_base = target.x - x;
         const dirY_base = target.y - y;
         const baseAngle = Math.atan2(dirY_base, dirX_base);
-
         const angleOffset = (i > 0) ? (i % 2 === 0 ? -1 : 1) * Math.ceil(i/2) * 15 * (Math.PI / 180) : 0;
         const finalAngle = baseAngle + angleOffset;
-        
         const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
-        
         p.init(x, y, direction, finalDamage, isCrit);
     }
     if (!isRapidFire) {
@@ -744,7 +751,7 @@ function initGame() {
     if (loadGame()) {
         document.getElementById('start-button').textContent = "Resume";
         document.getElementById('call-wave-button').style.display = 'block';
-        SkillManager.applyAllLoadedEffects();
+        SkillManager.recalculateAllSkillEffects(); // Use the robust recalculation function
     } else { TDState.gold = 100 + MetaUpgrades.getBonus('startingGold'); }
     updateUI(); draw();
 }
