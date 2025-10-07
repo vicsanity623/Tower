@@ -1,11 +1,8 @@
 /*
-    Vics Tower Defense - Revision 12 (The Skill Tree Update)
-    - Added a comprehensive, expandable Skill Tree system.
-    - Implemented a SkillManager to handle skill logic, purchasing, and effects.
-    - Added dynamic rendering for the skill tree modal UI.
-    - Integrated 8 sample skills (Multi-Shot, Rapid Fire, Pierce, etc.) into core game mechanics.
-    - Game now pauses when the skill tree is open.
-    - Save/Load system now includes skill progression.
+    Vics Tower Defense - Revision 13 (Projectile & Layout Patch)
+    - Fixed projectile bug where projectiles would fly erratically if their target died mid-flight.
+      Projectiles now use a fire-and-forget directional vector.
+    - Finalized UI layout adjustments via CSS, removing now-redundant JS.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -17,35 +14,25 @@ const TD_CONFIG = {
 };
 
 const MAXS = {
-    HERO_DAMAGE: 10000,
-    HERO_RANGE: 500,
-    HERO_FIRE_RATE: 20,
-    CRIT_CHANCE: 90,
-    CASTLE_HP: 10000,
-    HERO_SPEED: 250,
+    HERO_DAMAGE: 10000, HERO_RANGE: 500, HERO_FIRE_RATE: 20,
+    CRIT_CHANCE: 90, CASTLE_HP: 10000, HERO_SPEED: 250,
 };
 
 const UPGRADE_COST_MULT = 1.18;
-const ABILITY_COOLDOWNS = {
-    empBlast: 45000
-};
+const ABILITY_COOLDOWNS = { empBlast: 45000 };
 
 // ---------------------------- Canvas & Context Setup ----------------------------
 let canvas = null, ctx = null, canvasWidth = 0, canvasHeight = 0;
-
 function setupCanvas() {
     canvas = document.getElementById(TD_CONFIG.canvasId);
     ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
-    canvasWidth = rect.width;
-    canvasHeight = rect.height;
+    canvasWidth = rect.width; canvasHeight = rect.height;
     ctx.font = 'bold 16px "Orbitron", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 }
 
 // ---------------------------- Game Path Generation ----------------------------
@@ -56,7 +43,6 @@ const pathPresets = [
     (w, h) => [{ x: w * 0.2, y: -50 }, { x: w * 0.2, y: h * 0.4 }, { x: w * 0.6, y: h * 0.5 }, { x: w * 0.6, y: h * 0.8 }, { x: w * 0.4, y: h + 50 }],
     (w, h) => [{ x: w * 0.9, y: -50 }, { x: w * 0.9, y: h * 0.3 }, { x: w * 0.3, y: h * 0.4 }, { x: w * 0.3, y: h * 0.7 }, { x: w * 0.6, y: h + 50 }],
 ];
-
 function generateNewPath() {
     gamePath.length = 0;
     const currentPathIndex = Math.floor(Math.random() * pathPresets.length);
@@ -167,67 +153,33 @@ const particlePool = {
     }
 };
 
-// ---------------------------- NEW: Skill Tree System ----------------------------
+// ---------------------------- Skill Tree System ----------------------------
 const SkillTree = {
-    multiShot: {
-        id: 'multiShot', name: 'Multi-Shot', maxLevel: 10, unlockWave: 10, requires: null,
-        cost: 500, description: 'Fire +1 projectile at a nearby target.'
-    },
-    piercingShot: {
-        id: 'piercingShot', name: 'Piercing Shot', maxLevel: 10, unlockWave: 15, requires: 'multiShot',
-        cost: 800, description: 'Projectiles pierce +1 enemy.'
-    },
-    rapidFire: {
-        id: 'rapidFire', name: 'Rapid Fire', maxLevel: 10, unlockWave: 15, requires: 'multiShot',
-        cost: 1200, description: 'Fire an extra projectile burst.'
-    },
-    legolas: {
-        id: 'legolas', name: 'Legolas', maxLevel: 10, unlockWave: 20, requires: 'rapidFire',
-        cost: 1500, description: 'Increase fire rate and projectile speed.'
-    },
-    follower: {
-        id: 'follower', name: 'Follower', maxLevel: 1, unlockWave: 25, requires: 'piercingShot',
-        cost: 5000, description: 'Spawns a follower that mirrors your movement.'
-    },
-    spreadShot: {
-        id: 'spreadShot', name: 'Spread Shot', maxLevel: 10, unlockWave: 30, requires: 'follower',
-        cost: 2500, description: 'All turrets fire +1 projectile in an arc.'
-    },
-    godSpeed: {
-        id: 'godSpeed', name: 'God Speed', maxLevel: 10, unlockWave: 30, requires: 'follower',
-        cost: 2000, description: 'Increases Hero movement speed.'
-    },
-    repair: {
-        id: 'repair', name: 'Repair', maxLevel: 10, unlockWave: 35, requires: 'godSpeed',
-        cost: 3000, description: 'Passively repair the castle when nearby.'
-    },
+    multiShot: { id: 'multiShot', name: 'Multi-Shot', maxLevel: 10, unlockWave: 10, requires: null, cost: 500, description: 'Fire +1 projectile at a nearby target.' },
+    piercingShot: { id: 'piercingShot', name: 'Piercing Shot', maxLevel: 10, unlockWave: 15, requires: 'multiShot', cost: 800, description: 'Projectiles pierce +1 enemy.' },
+    rapidFire: { id: 'rapidFire', name: 'Rapid Fire', maxLevel: 10, unlockWave: 15, requires: 'multiShot', cost: 1200, description: 'Fire an extra projectile burst.' },
+    legolas: { id: 'legolas', name: 'Legolas', maxLevel: 10, unlockWave: 20, requires: 'rapidFire', cost: 1500, description: 'Increase fire rate and projectile speed.' },
+    follower: { id: 'follower', name: 'Follower', maxLevel: 1, unlockWave: 25, requires: 'piercingShot', cost: 5000, description: 'Spawns a follower that mirrors your movement.' },
+    spreadShot: { id: 'spreadShot', name: 'Spread Shot', maxLevel: 10, unlockWave: 30, requires: 'follower', cost: 2500, description: 'All turrets fire +1 projectile in an arc.' },
+    godSpeed: { id: 'godSpeed', name: 'God Speed', maxLevel: 10, unlockWave: 30, requires: 'follower', cost: 2000, description: 'Increases Hero movement speed.' },
+    repair: { id: 'repair', name: 'Repair', maxLevel: 10, unlockWave: 35, requires: 'godSpeed', cost: 3000, description: 'Passively repair the castle when nearby.' },
 };
 
 const SkillManager = {
     levels: {},
-    init() {
-        Object.keys(SkillTree).forEach(key => this.levels[key] = 0);
-    },
+    init() { Object.keys(SkillTree).forEach(key => this.levels[key] = 0); },
     getSkillLevel(id) { return this.levels[id] || 0; },
     getSkillCost(id) {
-        const skill = SkillTree[id];
-        if (!skill) return Infinity;
+        const skill = SkillTree[id]; if (!skill) return Infinity;
         return Math.floor(skill.cost * Math.pow(1.5, this.getSkillLevel(id)));
     },
     purchaseSkill(id) {
-        const skill = SkillTree[id];
-        const level = this.getSkillLevel(id);
-        const cost = this.getSkillCost(id);
+        const skill = SkillTree[id]; const level = this.getSkillLevel(id); const cost = this.getSkillCost(id);
         if (TDState.gold >= cost && level < skill.maxLevel) {
-            TDState.gold -= cost;
-            this.levels[id]++;
-            this.applySkillEffects(id, 1);
-            AudioManager.play('upgrade');
-            renderSkillTree();
-            return true;
+            TDState.gold -= cost; this.levels[id]++; this.applySkillEffects(id, 1);
+            AudioManager.play('upgrade'); renderSkillTree(); return true;
         }
-        AudioManager.play('error');
-        return false;
+        AudioManager.play('error'); return false;
     },
     applySkillEffects(id, levels) {
         if (id === 'legolas') TDState.hero.fireRate += 0.5 * levels;
@@ -241,7 +193,6 @@ const SkillManager = {
         });
     }
 };
-
 
 // ---------------------------- Castle Class ----------------------------
 class Castle {
@@ -265,15 +216,8 @@ class Castle {
     draw(ctx) {}
 }
 
-// ---------------------------- Enemy Definitions & Class ----------------------------
-const EnemyTypes = {
-    NORMAL: { hp: 30, speed: 40, reward: 5, size: 20, color: '#ff6b6b' },
-    TANK: { hp: 100, speed: 25, reward: 10, size: 30, color: '#4834d4' },
-    RUNNER: { hp: 15, speed: 80, reward: 3, size: 15, color: '#1dd1a1' },
-    HEALER: { hp: 40, speed: 30, reward: 15, size: 22, color: '#feca57', special: 'HEAL' },
-    SPLITTER: { hp: 50, speed: 35, reward: 8, size: 28, color: '#ff9ff3', special: 'SPLIT' }
-};
-
+// ---------------------------- Enemy Class ----------------------------
+// ... (This class is unchanged from the previous version)
 class Enemy {
     constructor() { this.reset(); }
     reset() {
@@ -345,32 +289,44 @@ class Enemy {
     reachEnd() { this.active = false; TDState.castle.takeDamage(10); }
 }
 
-// ---------------------------- Projectile Class ----------------------------
+// ---------------------------- Projectile Class (PATCHED) ----------------------------
 class Projectile {
     constructor() { this.active = false; }
-    init(x, y, target, damage, isCrit = false) {
-        this.active = true; this.x = x; this.y = y; this.target = target;
-        this.damage = damage; this.isCrit = isCrit;
+    init(x, y, direction, damage, isCrit = false) {
+        this.active = true;
+        this.x = x; this.y = y;
+        this.direction = direction; // Store the calculated direction vector
+        this.damage = damage;
+        this.isCrit = isCrit;
         this.spawnTime = now();
         this.pierceLeft = SkillManager.getSkillLevel('piercingShot');
         this.hitEnemies = [];
     }
     update(dt) {
         if (!this.active || now() - this.spawnTime > 3000) { this.active = false; return; }
+
         const projectileSpeed = 500 + (SkillManager.getSkillLevel('legolas') * 50);
-        const dx = this.target.x - this.x, dy = this.target.y - this.y;
-        const dist = Math.hypot(dx, dy);
-        this.x += (dx / dist) * projectileSpeed * dt;
-        this.y += (dy / dist) * projectileSpeed * dt;
-        TDState.enemies.forEach(e => {
+        // Move in the fixed direction
+        this.x += this.direction.x * projectileSpeed * dt;
+        this.y += this.direction.y * projectileSpeed * dt;
+
+        // Collision detection remains the same
+        for (const e of TDState.enemies) {
             if (this.active && e.active && !this.hitEnemies.includes(e) && Math.hypot(this.x - e.x, this.y - e.y) < e.size / 2) {
                 e.takeDamage(this.damage);
                 this.pierceLeft--;
                 this.hitEnemies.push(e);
-                if (this.pierceLeft < 0) this.active = false;
+                if (this.pierceLeft < 0) {
+                    this.active = false;
+                    break; // Stop checking once projectile is used up
+                }
             }
-        });
-        if (dist > 2000) this.active = false;
+        }
+
+        // Despawn if it goes way off-screen
+        if (this.x < -50 || this.x > canvasWidth + 50 || this.y < -50 || this.y > canvasHeight + 50) {
+            this.active = false;
+        }
     }
     draw(ctx) {
         ctx.save(); const baseColor = this.isCrit ? '#ffeb3b' : '#e0e0ff';
@@ -379,6 +335,7 @@ class Projectile {
         ctx.restore();
     }
 }
+
 
 // ---------------------------- Hero and Follower Classes ----------------------------
 class Hero {
@@ -498,23 +455,28 @@ class Follower {
     }
 }
 
-// ---------------------------- Global Projectile Function ----------------------------
+// ---------------------------- Global Projectile Function (PATCHED) ----------------------------
 function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) {
-    if(!isRapidFire) AudioManager.play('shoot');
+    if (!isRapidFire) AudioManager.play('shoot');
     const isCrit = Math.random() * 100 < critChance;
     const finalDamage = damage * (isCrit ? 2.5 : 1.0);
     const spreadLevel = SkillManager.getSkillLevel('spreadShot');
     for (let i = 0; i < 1 + spreadLevel; i++) {
         let p = TDState.projectiles.find(pr => !pr.active);
         if (!p) { p = new Projectile(); TDState.projectiles.push(p); }
-        let currentTarget = target;
-        if (i > 0) {
-            const angleOffset = (i % 2 === 0 ? -1 : 1) * Math.ceil(i/2) * 15 * (Math.PI / 180);
-            const dirX = target.x - x, dirY = target.y - y;
-            const originalAngle = Math.atan2(dirY, dirX); const newAngle = originalAngle + angleOffset;
-            currentTarget = { x: x + Math.cos(newAngle) * 2000, y: y + Math.sin(newAngle) * 2000, active: true };
-        }
-        p.init(x, y, currentTarget, finalDamage, isCrit);
+        
+        const dirX = target.x - x;
+        const dirY = target.y - y;
+        const originalAngle = Math.atan2(dirY, dirX);
+        const angleOffset = (i > 0) ? (i % 2 === 0 ? -1 : 1) * Math.ceil(i/2) * 15 * (Math.PI / 180) : 0;
+        const finalAngle = originalAngle + angleOffset;
+        
+        const direction = {
+            x: Math.cos(finalAngle),
+            y: Math.sin(finalAngle)
+        };
+        
+        p.init(x, y, direction, finalDamage, isCrit);
     }
     if (!isRapidFire) {
         const color = isCrit ? '#ffeb3b' : '#e0e0ff';
@@ -522,6 +484,9 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
         floatingTextPool.get(`-${Math.round(finalDamage)}`, target.x, target.y - 10, color, 600, font);
     }
 }
+
+
+// ... (The rest of the file is identical to the previous full version)
 
 // ---------------------------- Upgrade Manager ----------------------------
 const UpgradeManager = {
@@ -694,8 +659,6 @@ function showGameOverScreen() {
     document.getElementById('final-kills-stat').textContent = `Slimes Defeated: ${TDState.enemiesKilled}`;
     document.getElementById('gems-earned-stat').textContent = `Gems Earned: ${TDState.gemsEarned}`;
 }
-
-// ---------------------------- Skill Tree UI Functions ----------------------------
 function renderSkillTree() {
     const container = document.getElementById('skill-tree-container');
     container.innerHTML = '';
@@ -717,7 +680,7 @@ function renderSkillTree() {
             if (level >= skill.maxLevel) node.classList.add('maxed');
             node.innerHTML = `
                 <div class="skill-name">${skill.name}</div>
-                <div class="skill-level">Lv ${level}/${skill.maxLevel}</div>
+                <div class.skill-level">Lv ${level}/${skill.maxLevel}</div>
                 <div class="skill-cost">Cost: ${SkillManager.getSkillCost(skill.id)}</div>
             `;
             if (isUnlocked && level < skill.maxLevel) {
@@ -729,13 +692,13 @@ function renderSkillTree() {
     });
 }
 function openSkillsModal() {
-    if (TDState.running) pauseGame(true); // Special pause for modal
+    if (TDState.running) pauseGame(true);
     renderSkillTree();
     document.getElementById('skills-modal').style.display = 'flex';
 }
 function closeSkillsModal() {
     document.getElementById('skills-modal').style.display = 'none';
-    startGame(); // This will correctly resume the game loop
+    if (!TDState.gameOver) startGame(); // Automatically resume the game
 }
 
 // ---------------------------- Save/Load System ----------------------------
