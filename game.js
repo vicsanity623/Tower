@@ -1,23 +1,25 @@
 /*
-    Vics Tower Defense - Game.js Revision 2
+    Vics Tower Defense - Game.js Revision 3 (Patched for AI Enhanced UI)
     - Implemented Castle with HP and collision detection.
     - Player tower moved to a fixed defensive position.
     - Added randomized enemy path generation for each wave.
     - Corrected wave completion logic.
+    - UI elements updated to match AI-enhanced CSS.
+    - Added visual enhancements to drawing for entities.
 */
 
 // ---------------------------- Configuration ----------------------------
 const TD_CONFIG = {
     canvasId: 'gameCanvas',
-    baseGoldPerEnemy: 5,
+    baseGoldPerEnemy: 15,
     waveStartDelay: 2000,
     spawnInterval: 600,
 };
 
 const MAXS = {
     TOWER_DAMAGE: 10000,
-    TOWER_RANGE: 500,
-    TOWER_FIRE_RATE: 10,
+    TOWER_RANGE: 900,
+    TOWER_FIRE_RATE: 50,
     CRIT_CHANCE: 90,
     CASTLE_HP: 1000,
 };
@@ -40,6 +42,12 @@ function setupCanvas() {
     ctx.scale(dpr, dpr);
     canvasWidth = rect.width;
     canvasHeight = rect.height;
+
+    // IMPORTANT: Set font styles for canvas drawing here to match new UI fonts
+    // Floating texts
+    ctx.font = 'bold 16px "Orbitron", sans-serif'; // Default for floating texts
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle'; // Center text vertically
 }
 
 // ---------------------------- Game Path Generation ----------------------------
@@ -85,10 +93,11 @@ function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function now() { return performance.now(); }
 const floatingTextPool = {
     pool: [],
-    get(text, x, y, color = 'white', ttl = 1000) {
+    get(text, x, y, color = 'white', ttl = 1000, font = 'bold 16px "Orbitron", sans-serif') { // Added font parameter
         let obj = this.pool.length > 0 ? this.pool.pop() : {};
         obj.text = text; obj.x = x; obj.y = y; obj.color = color; obj.ttl = ttl;
         obj.spawnTime = now();
+        obj.font = font; // Store font with the object
         TDState.floatingTexts.push(obj);
     },
     release(obj) { this.pool.push(obj); }
@@ -99,27 +108,33 @@ class Castle {
     constructor() {
         this.hp = MAXS.CASTLE_HP;
         this.maxHp = MAXS.CASTLE_HP;
+        // Position the castle at the bottom edge of the *canvas*
+        // The UI handles its own positioning on top of this.
         this.x = 0;
-        this.y = canvasHeight * 0.95;
+        this.y = canvasHeight - 50; // Give it a fixed height from the bottom of the canvas
         this.width = canvasWidth;
-        this.height = canvasHeight * 0.05;
+        this.height = 50; // Visual height for the canvas element
     }
     takeDamage(amount) {
         this.hp = Math.max(0, this.hp - amount);
-        floatingTextPool.get(`-${amount}`, canvasWidth / 2, this.y - 10, '#c75869');
+        // Using `calc(canvasWidth / 2)` for floating text position for visual consistency.
+        floatingTextPool.get(`-${amount}`, canvasWidth / 2, this.y + this.height / 2, '#ef5350', 1200, 'bold 24px "Orbitron", sans-serif'); // Brighter red, larger font
         if (this.hp <= 0) {
             TDState.gameOver = true;
             TDState.running = false;
-            floatingTextPool.get('GAME OVER', canvasWidth / 2, canvasHeight / 2, 'red', 5000);
+            floatingTextPool.get('GAME OVER', canvasWidth / 2, canvasHeight / 2, '#ef5350', 5000, 'bold 48px "Bangers", cursive'); // More impactful game over
         }
         updateUI();
     }
     draw(ctx) {
-        ctx.fillStyle = '#232d43';
-        ctx.fillRect(this.x, this.y, this.width, this.height);
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(this.x, this.y, this.width, this.height);
+        // The castle itself isn't drawn here; it's represented by the bottom area
+        // and the HP bar. We might draw a symbolic base if needed, but for now
+        // it's abstract.
+        // ctx.fillStyle = '#2c3a58'; // panel-bg
+        // ctx.fillRect(this.x, this.y, this.width, this.height);
+        // ctx.strokeStyle = '#232d43'; // panel-border
+        // ctx.lineWidth = 2;
+        // ctx.strokeRect(this.x, this.y, this.width, this.height);
     }
 }
 
@@ -135,6 +150,7 @@ class Enemy {
         this.reward = 5;
         this.size = 20;
         this.pathIndex = 0;
+        this.color = '#c75869'; // Default slime color
     }
     init(template) {
         this.active = true;
@@ -144,6 +160,11 @@ class Enemy {
         this.speed = template.speed;
         this.reward = template.reward;
         this.pathIndex = 1;
+        // Randomize enemy color slightly
+        const hue = Math.floor(Math.random() * 60) + 330; // Red-pinkish hues
+        const saturation = Math.floor(Math.random() * 30) + 70; // 70-100%
+        const lightness = Math.floor(Math.random() * 10) + 50; // 50-60%
+        this.color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
     }
     update(dt) {
         if (!this.active) return;
@@ -158,7 +179,7 @@ class Enemy {
         const dy = target.y - this.y;
         const dist = Math.hypot(dx, dy);
 
-        if (dist < 1) {
+        if (dist < 1) { // Close enough to next point
             this.pathIndex++;
         } else {
             this.x += (dx / dist) * this.speed * dt;
@@ -166,16 +187,47 @@ class Enemy {
         }
     }
     draw(ctx) {
-        ctx.fillStyle = '#c75869';
-        ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // Slime body with blob effect (simple arc for now)
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes
         ctx.fillStyle = 'white';
-        ctx.fillRect(this.x - 5, this.y - 5, 4, 4);
-        ctx.fillRect(this.x + 1, this.y - 5, 4, 4);
+        ctx.beginPath();
+        ctx.arc(-this.size / 4, -this.size / 4, this.size / 8, 0, Math.PI * 2);
+        ctx.arc(this.size / 4, -this.size / 4, this.size / 8, 0, Math.PI * 2);
+        ctx.fill();
+        // Pupils
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(-this.size / 4, -this.size / 4, this.size / 16, 0, Math.PI * 2);
+        ctx.arc(this.size / 4, -this.size / 4, this.size / 16, 0, Math.PI * 2);
+        ctx.fill();
+
+        // HP Bar above enemy
         const hpPct = this.hp / this.maxHp;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(this.x - this.size / 2, this.y - 15, this.size, 4);
-        ctx.fillStyle = '#63d68c';
-        ctx.fillRect(this.x - this.size / 2, this.y - 15, this.size * hpPct, 4);
+        const hpBarWidth = this.size + 10;
+        const hpBarHeight = 5;
+        const hpBarYOffset = -this.size / 2 - 10;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; // Dark background for HP bar
+        ctx.fillRect(-hpBarWidth / 2, hpBarYOffset, hpBarWidth, hpBarHeight);
+        
+        // HP bar gradient
+        const gradient = ctx.createLinearGradient(-hpBarWidth / 2, 0, hpBarWidth / 2, 0);
+        gradient.addColorStop(0, '#ef5350'); // Red for low HP
+        gradient.addColorStop(0.5, '#ffeb3b'); // Yellow for mid HP
+        gradient.addColorStop(1, '#4caf50'); // Green for high HP
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(-hpBarWidth / 2, hpBarYOffset, hpBarWidth * hpPct, hpBarHeight);
+
+        ctx.restore();
     }
     takeDamage(dmg) {
         this.hp -= dmg;
@@ -189,24 +241,27 @@ class Enemy {
         this.active = false;
         TDState.enemiesKilled++;
         TDState.gold += this.reward;
-        floatingTextPool.get(`+${this.reward}`, this.x, this.y, '#ffc93c');
+        floatingTextPool.get(`+${this.reward}`, this.x, this.y, '#ffeb3b'); // Accent gold
+        // Release the enemy back to a pool for reuse if you have one
     }
     reachEnd() {
         this.active = false;
         TDState.castle.takeDamage(10); // Each enemy deals 10 damage
+        // Release the enemy back to a pool
     }
 }
 
 // ---------------------------- Projectile & Tower Classes (largely unchanged) ----------------------------
 class Projectile {
     constructor() { this.active = false; }
-    init(x, y, target, damage) {
+    init(x, y, target, damage, isCrit = false) { // Added isCrit flag
         this.active = true;
         this.x = x; this.y = y;
         this.target = target;
         this.damage = damage;
         this.speed = 400;
         this.spawnTime = now();
+        this.isCrit = isCrit; // Store if it's a critical hit
     }
     update(dt) {
         if (!this.active || !this.target.active || now() - this.spawnTime > 3000) {
@@ -225,10 +280,20 @@ class Projectile {
         }
     }
     draw(ctx) {
-        ctx.fillStyle = '#ffc93c';
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // Projectile glow effect
+        const baseColor = this.isCrit ? '#ffeb3b' : '#e0e0ff'; // Gold for crit, light blue for normal
+        ctx.shadowColor = baseColor;
+        ctx.shadowBlur = this.isCrit ? 15 : 8; // More blur for crit
+
+        ctx.fillStyle = baseColor;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, 5, 0, Math.PI * 2);
+        ctx.arc(0, 0, this.isCrit ? 6 : 4, 0, Math.PI * 2); // Larger for crit
         ctx.fill();
+
+        ctx.restore();
     }
 }
 
@@ -241,7 +306,7 @@ class Tower {
         this.fireRate = 1.2;
         this.crit = 5;
         this.lastShot = 0;
-        this.muzzleFlash = 0;
+        this.muzzleFlash = 0; // Timer for muzzle flash effect
     }
     findTarget() {
         let best = null;
@@ -259,59 +324,100 @@ class Tower {
     shootAt(target) {
         if (!target || now() - this.lastShot < 1000 / this.fireRate) return;
         this.lastShot = now();
-        this.muzzleFlash = 100;
+        this.muzzleFlash = 100; // Reset muzzle flash duration
 
         const crit = Math.random() * 100 < this.crit;
         const damage = this.damage * (crit ? 2.5 : 1.0);
         
         let p = TDState.projectiles.find(pr => !pr.active) || new Projectile();
         if (!TDState.projectiles.includes(p)) TDState.projectiles.push(p);
-        p.init(this.x, this.y - 20, target, damage);
+        p.init(this.x, this.y - 20, target, damage, crit); // Pass crit status to projectile
 
-        const color = crit ? 'orange' : 'white';
-        floatingTextPool.get(`-${Math.round(damage)}`, target.x, target.y - 10, color, 600);
+        const color = crit ? '#ffeb3b' : '#e0e0ff'; // Gold for crit, light blue for normal
+        const font = crit ? 'bold 20px "Press Start 2P", cursive' : 'bold 16px "Orbitron", sans-serif'; // Larger, more impactful font for crits
+        floatingTextPool.get(`-${Math.round(damage)}`, target.x, target.y - 10, color, 600, font);
     }
     upgrade(stat) {
-        if (!UpgradeManager.canAffordUpgrade(stat)) return;
+        if (!UpgradeManager.canAffordUpgrade(stat)) {
+            // Provide feedback if cannot afford
+            floatingTextPool.get('Not enough gold!', canvasWidth / 2, canvasHeight - 100, '#ef5350', 1000);
+            return;
+        }
         UpgradeManager.payForUpgrade(stat);
-        if (stat === 'damage') this.damage = Math.min(MAXS.TOWER_DAMAGE, this.damage + 6);
-        if (stat === 'range') this.range = Math.min(MAXS.TOWER_RANGE, this.range + 10);
-        if (stat === 'fireRate') this.fireRate = Math.min(MAXS.TOWER_FIRE_RATE, this.fireRate + 0.1);
-        if (stat === 'crit') this.crit = Math.min(MAXS.CRIT_CHANCE, this.crit + 1);
+        let upgradeValue = 0;
+        switch(stat) {
+            case 'damage':
+                this.damage = Math.min(MAXS.TOWER_DAMAGE, this.damage + 6);
+                upgradeValue = `+6 DMG`;
+                break;
+            case 'range':
+                this.range = Math.min(MAXS.TOWER_RANGE, this.range + 10);
+                upgradeValue = `+10 RNG`;
+                break;
+            case 'fireRate':
+                this.fireRate = Math.min(MAXS.TOWER_FIRE_RATE, this.fireRate + 0.1);
+                upgradeValue = `+0.1 SPD`;
+                break;
+            case 'crit':
+                this.crit = Math.min(MAXS.CRIT_CHANCE, this.crit + 1);
+                upgradeValue = `+1% CRIT`;
+                break;
+        }
+        // Show upgrade text feedback
+        floatingTextPool.get(upgradeValue, this.x, this.y - 50, '#4caf50', 800);
         updateUI();
     }
     draw(ctx) {
-        ctx.fillStyle = "rgba(135, 153, 194, 0.1)";
-        ctx.strokeStyle = "rgba(135, 153, 194, 0.3)";
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // Range indicator (subtle glow)
+        ctx.fillStyle = "rgba(135, 153, 194, 0.05)"; // Very light fill
+        ctx.strokeStyle = "rgba(135, 153, 194, 0.2)"; // Light stroke
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.range, 0, Math.PI * 2);
+        ctx.arc(0, 0, this.range, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = '#63d68c';
+
+        // Tower Base (more metallic/techy)
+        ctx.fillStyle = '#4f4f8a'; // Panel border color for base
         ctx.beginPath();
-        ctx.arc(this.x, this.y, 30, 0, Math.PI * 2);
+        ctx.arc(0, 0, 35, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.strokeStyle = '#6a6ac2';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Tower Body (main component)
+        ctx.fillStyle = '#3a3a60'; // Panel bg light
         ctx.beginPath();
-        ctx.arc(this.x - 10, this.y - 10, 5, 0, Math.PI * 2);
+        ctx.roundRect(-20, -40, 40, 60, 10); // Rounded rectangle
         ctx.fill();
-        ctx.fillStyle = 'white';
+        ctx.strokeStyle = '#4f4f8a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Tower Top/Gun barrel
+        ctx.fillStyle = '#1e1e3b'; // Panel bg dark
         ctx.beginPath();
-        ctx.arc(this.x - 8, this.y, 5, 0, Math.PI * 2);
-        ctx.arc(this.x + 8, this.y, 5, 0, Math.PI * 2);
+        ctx.roundRect(-10, -55, 20, 20, 5);
         ctx.fill();
-        ctx.fillStyle = 'black';
-        ctx.beginPath();
-        ctx.arc(this.x - 7, this.y + 1, 3, 0, Math.PI * 2);
-        ctx.arc(this.x + 9, this.y + 1, 3, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.strokeStyle = '#4f4f8a';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Muzzle Flash
         if (this.muzzleFlash > 0) {
-            ctx.fillStyle = `rgba(255, 201, 60, ${this.muzzleFlash/100})`;
+            ctx.fillStyle = `rgba(255, 235, 59, ${this.muzzleFlash/100})`; // Bright gold flash
             ctx.beginPath();
-            ctx.arc(this.x, this.y - 25, 10, 0, Math.PI * 2);
+            ctx.arc(0, -55, 15 * (this.muzzleFlash / 100), 0, Math.PI * 2); // Dynamic size
             ctx.fill();
+            ctx.shadowColor = `rgba(255, 235, 59, ${this.muzzleFlash/100})`;
+            ctx.shadowBlur = 20;
         }
+        
+        ctx.restore(); // Restore context to remove shadow blur for other elements
     }
 }
 
@@ -352,7 +458,8 @@ class WaveManager {
         this.spawned = 0;
         this.spawnTimer = 0;
         this.spawning = true;
-        floatingTextPool.get(`Wave ${this.wave}`, canvasWidth / 2, 40, 'white', 2000);
+        floatingTextPool.get(`Wave ${this.wave} Incoming!`, canvasWidth / 2, canvasHeight * 0.4, '#e0e0ff', 2000, 'bold 32px "Bangers", cursive'); // More prominent wave text
+        updateUI(); // Update UI immediately when wave starts
     }
     update(dt) {
         if (!this.spawning) return;
@@ -370,12 +477,15 @@ class WaveManager {
             });
         }
         // Wave completion check
-        if (this.spawned >= this.enemiesToSpawn && TDState.enemies.every(e => !e.active)) {
+        // Ensure all *active* enemies are accounted for
+        const activeEnemiesCount = TDState.enemies.filter(e => e.active).length;
+        if (this.spawned >= this.enemiesToSpawn && activeEnemiesCount === 0) {
             this.spawning = false;
             const bonus = 10 * this.wave;
             TDState.gold += bonus;
-            floatingTextPool.get(`Wave Cleared! +${bonus}`, canvasWidth / 2, 70, '#ffc93c', 2000);
-            setTimeout(() => this.startNextWave(), 2500);
+            floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive'); // Prominent bonus text
+            updateUI(); // Update UI for new gold
+            setTimeout(() => this.startNextWave(), TD_CONFIG.waveStartDelay); // Use configured delay
         }
     }
 }
@@ -384,7 +494,12 @@ class WaveManager {
 let animationFrameId = null;
 
 function gameLoop(timestamp) {
-    if (!TDState.running) return;
+    if (!TDState.running || TDState.gameOver) { // Check gameOver here too
+        if (TDState.gameOver) {
+            // Optional: Show a "Restart" button or final score screen here
+        }
+        return;
+    }
     const dt = (timestamp - TDState.lastTime) / 1000;
     TDState.lastTime = timestamp;
     update(clamp(dt, 0.01, 0.1));
@@ -398,21 +513,22 @@ function update(dt) {
     TDState.projectiles.forEach(p => p.update(dt));
     const target = TDState.tower.findTarget();
     TDState.tower.shootAt(target);
-    if(TDState.tower.muzzleFlash > 0) TDState.tower.muzzleFlash -= dt * 1000;
+    if(TDState.tower.muzzleFlash > 0) TDState.tower.muzzleFlash -= dt * 1000; // Decay muzzle flash
     TDState.floatingTexts = TDState.floatingTexts.filter(ft => {
-        ft.y -= 10 * dt;
+        ft.y -= 30 * dt; // Faster vertical movement for visual pop
         const alive = now() - ft.spawnTime < ft.ttl;
         if (!alive) floatingTextPool.release(ft);
         return alive;
     });
-    updateUI();
+    updateUI(); // Call updateUI once per frame
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // Draw Path
+
+    // Draw Path (more visually distinct)
     if (gamePath.length > 0) {
-        ctx.strokeStyle = "rgba(0,0,0,0.2)";
+        ctx.strokeStyle = "rgba(79, 79, 138, 0.4)"; // var(--panel-border) with transparency
         ctx.lineWidth = 50;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -422,14 +538,22 @@ function draw() {
             ctx.lineTo(gamePath[i].x, gamePath[i].y);
         }
         ctx.stroke();
+
+        // Inner path for visual detail
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; // Lighter inner line
+        ctx.lineWidth = 2;
+        ctx.stroke();
     }
+    
     // Draw Objects
-    TDState.castle.draw(ctx);
+    TDState.castle.draw(ctx); // Still call, even if it does nothing visible here
     TDState.tower.draw(ctx);
     TDState.enemies.forEach(e => { if (e.active) e.draw(ctx); });
     TDState.projectiles.forEach(p => { if (p.active) p.draw(ctx); });
+    
+    // Draw Floating Texts
     TDState.floatingTexts.forEach(ft => {
-        ctx.font = 'bold 16px sans-serif';
+        ctx.font = ft.font; // Use the font stored with the floating text object
         ctx.fillStyle = ft.color;
         ctx.textAlign = 'center';
         ctx.fillText(ft.text, ft.x, ft.y);
@@ -438,21 +562,57 @@ function draw() {
 
 // ---------------------------- UI Integration ----------------------------
 function updateUI() {
+    // Update resource bar
     document.getElementById('gold-display').textContent = `Gold: ${Math.floor(TDState.gold)}`;
     document.getElementById('wave-display').textContent = `Wave: ${TDState.wave}`;
     document.getElementById('kills-display').textContent = `Kills: ${TDState.enemiesKilled}`;
+
+    // Update tower stats and costs
     const tower = TDState.tower;
     document.getElementById('damage-value').textContent = Math.round(tower.damage);
     document.getElementById('fireRate-value').textContent = `${tower.fireRate.toFixed(2)}/s`;
     document.getElementById('range-value').textContent = Math.round(tower.range);
     document.getElementById('crit-value').textContent = `${tower.crit.toFixed(0)}%`;
+
     document.getElementById('damage-cost').textContent = `Cost: ${UpgradeManager.getCost('damage')}`;
     document.getElementById('fireRate-cost').textContent = `Cost: ${UpgradeManager.getCost('fireRate')}`;
     document.getElementById('range-cost').textContent = `Cost: ${UpgradeManager.getCost('range')}`;
     document.getElementById('crit-cost').textContent = `Cost: ${UpgradeManager.getCost('crit')}`;
+
     // Update Castle HP Bar
     const hpPct = (TDState.castle.hp / TDState.castle.maxHp) * 100;
-    document.getElementById('castle-hp-bar').style.width = `${hpPct}%`;
+    const castleHpBar = document.getElementById('castle-hp-bar');
+    castleHpBar.style.width = `${hpPct}%`;
+
+    // Update the HP percentage text overlay
+    const hpTextOverlay = document.querySelector('#castle-hp-bar-container::after'); // This won't work directly on pseudo-element
+    // Instead, create a span inside the container for the text and update that.
+    let hpTextSpan = document.getElementById('castle-hp-text-overlay');
+    if (!hpTextSpan) {
+        hpTextSpan = document.createElement('span');
+        hpTextSpan.id = 'castle-hp-text-overlay';
+        document.getElementById('castle-hp-bar-container').appendChild(hpTextSpan);
+        // Add style for the span (or just inherit from CSS)
+        hpTextSpan.style.position = 'absolute';
+        hpTextSpan.style.top = '50%';
+        hpTextSpan.style.left = '50%';
+        hpTextSpan.style.transform = 'translate(-50%, -50%)';
+        hpTextSpan.style.color = 'var(--text-light)';
+        hpTextSpan.style.fontSize = '14px';
+        hpTextSpan.style.fontWeight = 'bold';
+        hpTextSpan.style.textShadow = '0 0 3px rgba(0,0,0,0.8)';
+        hpTextSpan.style.zIndex = '1';
+    }
+    hpTextSpan.textContent = `HP: ${Math.max(0, Math.floor(TDState.castle.hp))}/${TDState.castle.maxHp}`;
+    
+    // Change HP bar color based on percentage (dynamic gradient)
+    if (hpPct > 60) {
+        castleHpBar.style.background = 'linear-gradient(to right, var(--accent-green), #90ee90)';
+    } else if (hpPct > 30) {
+        castleHpBar.style.background = 'linear-gradient(to right, #ffeb3b, #ffda4a)'; // Yellow/Gold
+    } else {
+        castleHpBar.style.background = 'linear-gradient(to right, var(--accent-red), #ff7f7f)'; // Red
+    }
 }
 
 
@@ -463,22 +623,27 @@ function initGame() {
     TDState.castle = new Castle();
     TDState.tower = new Tower();
     TDState.waveManager = new WaveManager();
-    updateUI();
-    draw();
+    updateUI(); // Initial UI update
+    draw(); // Initial draw of the canvas
 }
 
 function startGame() {
     if (TDState.running || TDState.gameOver) return;
     TDState.running = true;
+    document.getElementById('start-button').disabled = true; // Disable start button
+    document.getElementById('pause-button').disabled = false; // Enable pause button
     TDState.lastTime = performance.now();
-    if(TDState.wave === 0) { // Only start the first wave
+    if(TDState.wave === 0) { // Only start the first wave if not already started
         TDState.waveManager.startNextWave();
     }
     gameLoop(TDState.lastTime);
 }
 
 function pauseGame() {
+    if (!TDState.running) return; // Only pause if running
     TDState.running = false;
+    document.getElementById('start-button').disabled = false; // Enable start button
+    document.getElementById('pause-button').disabled = true; // Disable pause button
     if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
     }
@@ -487,11 +652,19 @@ function pauseGame() {
 // ---------------------------- Event Listeners ----------------------------
 document.addEventListener('DOMContentLoaded', () => {
     initGame();
-    window.addEventListener('resize', initGame);
+    // Re-initialize canvas on resize to handle DPR correctly and redraw elements
+    window.addEventListener('resize', () => {
+        initGame(); // Re-initializes everything, including path and object positions relative to new size
+        if (TDState.running) { // Resume game if it was running
+            startGame();
+        }
+    });
+    
     document.getElementById('start-button').addEventListener('click', startGame);
     document.getElementById('pause-button').addEventListener('click', pauseGame);
+
+    // Disable pause button initially
+    document.getElementById('pause-button').disabled = true;
+
     document.getElementById('upgrade-damage').addEventListener('click', () => TDState.tower.upgrade('damage'));
-    document.getElementById('upgrade-fireRate').addEventListener('click', () => TDState.tower.upgrade('fireRate'));
-    document.getElementById('upgrade-range').addEventListener('click', () => TDState.tower.upgrade('range'));
-    document.getElementById('upgrade-crit').addEventListener('click', () => TDState.tower.upgrade('crit'));
-});
+    document.getElementById('
