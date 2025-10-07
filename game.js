@@ -1,8 +1,7 @@
 /*
-    Vics Tower Defense - Revision 9 (Recovery & Late-Game Upgrades)
-    - Added Castle HP recovery system: Player recovers 15% of max HP every 5 waves.
-    - Added a new, unlockable upgrade for Castle HP that appears after wave 25.
-    - Integrated new features seamlessly into existing game managers and UI updates.
+    Vics Tower Defense - Revision 11 (Wider Layout Finalization)
+    - Removed the JavaScript logic for adding/removing the ".expanded" class.
+    - The UI layout is now handled entirely by the wider max-width in the CSS.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -18,7 +17,7 @@ const MAXS = {
     HERO_RANGE: 500,
     HERO_FIRE_RATE: 20,
     CRIT_CHANCE: 90,
-    CASTLE_HP: 10000, // Increased max possible HP
+    CASTLE_HP: 10000,
 };
 
 const UPGRADE_COST_MULT = 1.18;
@@ -65,35 +64,17 @@ function generateNewPath() {
 
 // ---------------------------- Core Game State ----------------------------
 const TDState = {
-    running: false,
-    gameOver: false,
-    betweenWaves: true,
-    lastTime: 0,
-    gold: 100,
-    wave: 0,
-    enemiesKilled: 0,
-    gemsEarned: 0,
-    enemies: [],
-    projectiles: [],
-    particles: [],
-    floatingTexts: [],
-    hero: null,
-    castle: null,
-    waveManager: null,
+    running: false, gameOver: false, betweenWaves: true, lastTime: 0, gold: 100,
+    wave: 0, enemiesKilled: 0, gemsEarned: 0, enemies: [], projectiles: [],
+    particles: [], floatingTexts: [], hero: null, castle: null, waveManager: null,
     screenShake: { intensity: 0, duration: 0 },
-    abilities: {
-        empBlast: { lastUsed: -ABILITY_COOLDOWNS.empBlast }
-    }
+    abilities: { empBlast: { lastUsed: -ABILITY_COOLDOWNS.empBlast } }
 };
 
 // ---------------------------- Joystick State ----------------------------
 const joystick = {
-    active: false,
-    radius: 60,
-    deadzone: 10,
-    start: { x: 0, y: 0 },
-    current: { x: 0, y: 0 },
-    vector: { x: 0, y: 0 }
+    active: false, radius: 60, deadzone: 10,
+    start: { x: 0, y: 0 }, current: { x: 0, y: 0 }, vector: { x: 0, y: 0 }
 };
 
 // ---------------------------- Meta Progression & Storage ----------------------------
@@ -113,25 +94,19 @@ const MetaUpgrades = {
     },
     purchase(stat) {
         if (this.gems >= this.getCost(stat) && this.upgrades[stat].level < this.upgrades[stat].maxLevel) {
-            this.gems -= this.getCost(stat);
-            this.upgrades[stat].level++;
-            this.save();
-            AudioManager.play('upgrade');
-            return true;
+            this.gems -= this.getCost(stat); this.upgrades[stat].level++; this.save();
+            AudioManager.play('upgrade'); return true;
         }
-        AudioManager.play('error');
-        return false;
+        AudioManager.play('error'); return false;
     },
     save() {
-        const saveData = {
-            gems: this.gems,
-            levels: {
+        localStorage.setItem('slimeTDSaveData_meta', JSON.stringify({
+            gems: this.gems, levels: {
                 startingGold: this.upgrades.startingGold.level,
                 critChance: this.upgrades.critChance.level,
                 upgradeDiscount: this.upgrades.upgradeDiscount.level,
             }
-        };
-        localStorage.setItem('slimeTDSaveData_meta', JSON.stringify(saveData));
+        }));
     },
     load() {
         const saved = localStorage.getItem('slimeTDSaveData_meta');
@@ -154,16 +129,12 @@ const AudioManager = {
             audio.isLoaded = false;
             audio.addEventListener('canplaythrough', () => audio.isLoaded = true, { once: true });
             audio.addEventListener('error', () => {});
-            this.sounds[name] = audio;
-            this.sounds[name].volume = 0.5;
+            this.sounds[name] = audio; this.sounds[name].volume = 0.5;
         });
     },
     play(name) {
         const sound = this.sounds[name];
-        if (sound && sound.isLoaded) {
-            sound.currentTime = 0;
-            sound.play().catch(e => {});
-        }
+        if (sound && sound.isLoaded) { sound.currentTime = 0; sound.play().catch(e => {}); }
     }
 };
 
@@ -187,8 +158,7 @@ const particlePool = {
     spawn(x, y, count, color) {
         for (let i = 0; i < count; i++) {
             let p = this.get();
-            p.x = x; p.y = y;
-            p.vx = (Math.random() - 0.5) * 150; p.vy = (Math.random() - 0.5) * 150;
+            p.x = x; p.y = y; p.vx = (Math.random() - 0.5) * 150; p.vy = (Math.random() - 0.5) * 150;
             p.ttl = Math.random() * 500 + 200; p.spawnTime = now();
             p.color = color; p.size = Math.random() * 3 + 2;
             TDState.particles.push(p);
@@ -198,30 +168,21 @@ const particlePool = {
 
 // ---------------------------- Castle Class ----------------------------
 class Castle {
-    constructor() {
-        this.hp = 1000; // Start at base
-        this.maxHp = 1000;
-        this.y = canvasHeight;
-    }
+    constructor() { this.hp = 1000; this.maxHp = 1000; this.y = canvasHeight; }
     takeDamage(amount) {
         this.hp = Math.max(0, this.hp - amount);
-        TDState.screenShake = { intensity: 15, duration: 500 };
-        AudioManager.play('castle_hit');
+        TDState.screenShake = { intensity: 15, duration: 500 }; AudioManager.play('castle_hit');
         floatingTextPool.get(`-${amount}`, canvasWidth / 2, this.y - 80, '#ef5350', 1200, 'bold 24px "Orbitron", sans-serif');
         if (this.hp <= 0) {
             TDState.gameOver = true; TDState.running = false;
-            MetaUpgrades.gems += TDState.gemsEarned;
-            MetaUpgrades.save();
-            clearSave();
-            showGameOverScreen();
+            MetaUpgrades.gems += TDState.gemsEarned; MetaUpgrades.save(); clearSave(); showGameOverScreen();
         }
         updateUI();
     }
-    // NEW: Health Recovery Method
     recoverHp(percentage) {
         const recoveryAmount = Math.floor(this.maxHp * percentage);
         this.hp = Math.min(this.maxHp, this.hp + recoveryAmount);
-        floatingTextPool.get(`+${recoveryAmount} HP`, canvasWidth / 2, this.y - 120, '#4caf50', 2500, 'bold 28px "Bangers", cursive');
+        floatingTextPool.get(`+${recoveryAmount} HP`, canvasWidth / 2, canvasHeight - 120, '#4caf50', 2500, 'bold 28px "Bangers", cursive');
         updateUI();
     }
     draw(ctx) {}
@@ -239,9 +200,9 @@ const EnemyTypes = {
 class Enemy {
     constructor() { this.reset(); }
     reset() {
-        this.active = false; this.type = null; this.x = 0; this.y = 0; this.hp = 1; this.maxHp = 1;
-        this.speed = 20; this.reward = 5; this.size = 20; this.pathIndex = 0; this.color = '#c75869';
-        this.special = null; this.specialTimer = 0; this.stunnedUntil = 0; this.hitFlash = 0;
+        this.active = false; this.type = null; this.x = 0; this.y = 0; this.hp = 1; this.maxHp = 1; this.speed = 20;
+        this.reward = 5; this.size = 20; this.pathIndex = 0; this.color = '#c75869'; this.special = null;
+        this.specialTimer = 0; this.stunnedUntil = 0; this.hitFlash = 0;
     }
     init(type, waveModifier) {
         this.active = true; this.type = type; this.x = gamePath[0].x; this.y = gamePath[0].y;
@@ -249,16 +210,11 @@ class Enemy {
         this.size = type.size; this.color = type.color; this.special = type.special; this.pathIndex = 1; this.stunnedUntil = 0;
     }
     update(dt) {
-        if (!this.active) return;
-        if (this.hitFlash > 0) this.hitFlash -= dt * 1000;
-        if (now() < this.stunnedUntil) return;
-        if (this.pathIndex >= gamePath.length) { this.reachEnd(); return; }
-
-        const target = gamePath[this.pathIndex];
-        const dx = target.x - this.x, dy = target.y - this.y;
+        if (!this.active) return; if (this.hitFlash > 0) this.hitFlash -= dt * 1000;
+        if (now() < this.stunnedUntil) return; if (this.pathIndex >= gamePath.length) { this.reachEnd(); return; }
+        const target = gamePath[this.pathIndex]; const dx = target.x - this.x, dy = target.y - this.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { this.pathIndex++; } else { this.x += (dx / dist) * this.speed * dt; this.y += (dy / dist) * this.speed * dt; }
-
         if (this.special === 'HEAL') {
             this.specialTimer += dt * 1000;
             if (this.specialTimer > 3000) {
@@ -294,8 +250,7 @@ class Enemy {
         ctx.restore();
     }
     takeDamage(dmg) {
-        if (!this.active) return false;
-        this.hp -= dmg; this.hitFlash = 100; AudioManager.play('enemy_hit');
+        if (!this.active) return false; this.hp -= dmg; this.hitFlash = 100; AudioManager.play('enemy_hit');
         if (this.hp <= 0) { this.die(); return true; } return false;
     }
     die() {
@@ -406,16 +361,12 @@ const UpgradeManager = {
         this.levels = { damage: 0, range: 0, fireRate: 0, crit: 0, castleHp: 0 };
     },
     getCost(stat) {
-        const lvl = this.levels[stat];
-        const base = this.baseCosts[stat];
+        const lvl = this.levels[stat]; const base = this.baseCosts[stat];
         const discount = MetaUpgrades.getBonus('upgradeDiscount');
         return Math.ceil(base * Math.pow(UPGRADE_COST_MULT, lvl) * discount);
     },
     canAffordUpgrade(stat) { return TDState.gold >= this.getCost(stat); },
-    payForUpgrade(stat) {
-        TDState.gold -= this.getCost(stat);
-        this.levels[stat]++;
-    }
+    payForUpgrade(stat) { TDState.gold -= this.getCost(stat); this.levels[stat]++; }
 };
 
 // ---------------------------- Wave Manager ----------------------------
@@ -428,8 +379,7 @@ class WaveManager {
     startNextWave() {
         if (this.spawning) return;
         TDState.betweenWaves = false; document.getElementById('call-wave-button').style.display = 'none';
-        generateNewPath();
-        this.wave++; TDState.wave = this.wave; this.generateWaveComposition();
+        generateNewPath(); this.wave++; TDState.wave = this.wave; this.generateWaveComposition();
         this.enemiesToSpawn = this.waveComposition.length; this.spawned = 0; this.spawnTimer = 0;
         this.spawning = true; this.spawnFinished = false; AudioManager.play('wave_start');
         floatingTextPool.get(`Wave ${this.wave}`, canvasWidth / 2, canvasHeight * 0.4, '#e0e0ff', 2000, 'bold 32px "Bangers", cursive');
@@ -439,17 +389,11 @@ class WaveManager {
         this.spawning = false; TDState.betweenWaves = true;
         const bonus = 15 * this.wave; TDState.gold += bonus;
         TDState.gemsEarned += 1 + Math.floor(this.wave / 5);
-        
-        // NEW: Health Recovery Logic
-        if (this.wave > 0 && this.wave % 5 === 0) {
-            TDState.castle.recoverHp(0.15); // Recover 15%
-        }
-
+        if (this.wave > 0 && this.wave % 5 === 0) { TDState.castle.recoverHp(0.15); }
         document.getElementById('call-wave-button').style.display = 'block';
         AudioManager.play('wave_clear');
         floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive');
-        saveGame();
-        updateUI();
+        saveGame(); updateUI();
     }
     generateWaveComposition() {
         this.waveComposition = []; const baseCount = 8 + this.wave * 2;
@@ -479,15 +423,12 @@ class WaveManager {
 
 // ---------------------------- Main Game Loop ----------------------------
 let animationFrameId = null;
-
 function gameLoop(timestamp) {
     if (!TDState.running) return;
     const dt = clamp((timestamp - TDState.lastTime) / 1000, 0.01, 0.1);
-    TDState.lastTime = timestamp;
-    update(dt); draw();
+    TDState.lastTime = timestamp; update(dt); draw();
     animationFrameId = requestAnimationFrame(gameLoop);
 }
-
 function update(dt) {
     if (TDState.gameOver) return;
     TDState.waveManager.update(dt); TDState.hero.update(dt);
@@ -502,7 +443,6 @@ function update(dt) {
     } else { TDState.screenShake.intensity = 0; }
     updateUI();
 }
-
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save();
     if (TDState.screenShake.intensity > 0) {
@@ -512,19 +452,16 @@ function draw() {
     }
     if (gamePath.length > 0) {
         ctx.strokeStyle = "rgba(79, 79, 138, 0.4)"; ctx.lineWidth = 50;
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        ctx.beginPath(); ctx.moveTo(gamePath[0].x, gamePath[0].y);
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(gamePath[0].x, gamePath[0].y);
         for (let i = 1; i < gamePath.length; i++) ctx.lineTo(gamePath[i].x, gamePath[i].y);
-        ctx.stroke();
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.stroke(); ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; ctx.lineWidth = 2; ctx.stroke();
     }
     TDState.castle.draw(ctx); TDState.hero.draw(ctx);
     TDState.enemies.forEach(e => { if (e.active) e.draw(ctx); });
     TDState.projectiles.forEach(p => p.draw(ctx));
     TDState.particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
     TDState.floatingTexts.forEach(ft => {
-        ctx.font = ft.font; ctx.fillStyle = ft.color;
-        ctx.textAlign = 'center'; ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.font = ft.font; ctx.fillStyle = ft.color; ctx.textAlign = 'center'; ctx.fillText(ft.text, ft.x, ft.y);
     });
     if (joystick.active) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; ctx.lineWidth = 2;
@@ -564,28 +501,21 @@ function updateUI() {
     const empButton = document.getElementById('emp-blast-button');
     const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
     if (cooldownTime > 0) {
-        empButton.disabled = true;
-        empButton.textContent = `${(cooldownTime / 1000).toFixed(1)}s`;
+        empButton.disabled = true; empButton.textContent = `${(cooldownTime / 1000).toFixed(1)}s`;
     } else {
-        empButton.disabled = false;
-        empButton.textContent = 'EMP';
+        empButton.disabled = false; empButton.textContent = 'EMP';
     }
 
-    // NEW: Castle HP Upgrade UI Logic
+    // PATCH: Remove the logic that adds/removes the 'expanded' class
     const castleUpgradeButton = document.getElementById('upgrade-castle-hp');
-    const uiPanel = document.getElementById('ui-panel'); // Get the panel itself
-    
     if (TDState.wave >= 25) {
         castleUpgradeButton.style.display = 'flex';
-        uiPanel.classList.add('expanded'); // Add the class to change the grid
         document.getElementById('castleHp-value').textContent = TDState.castle.maxHp;
         document.getElementById('castleHp-cost').textContent = `Cost: ${UpgradeManager.getCost('castleHp')}`;
     } else {
         castleUpgradeButton.style.display = 'none';
-        uiPanel.classList.remove('expanded'); // Remove the class if the button is hidden
     }
 }
-
 function showGameOverScreen() {
     document.getElementById('game-over-screen').style.display = 'flex';
     document.getElementById('final-wave-stat').textContent = `Wave Reached: ${TDState.wave}`;
@@ -606,7 +536,6 @@ function saveGame() {
     };
     localStorage.setItem(TD_CONFIG.saveKey, JSON.stringify(gameState));
 }
-
 function loadGame() {
     const savedState = localStorage.getItem(TD_CONFIG.saveKey);
     if (savedState) {
@@ -621,31 +550,18 @@ function loadGame() {
     }
     return false;
 }
-
-function clearSave() {
-    localStorage.removeItem(TD_CONFIG.saveKey);
-}
+function clearSave() { localStorage.removeItem(TD_CONFIG.saveKey); }
 
 // ---------------------------- Game Control ----------------------------
 function initGame() {
-    setupCanvas();
-    MetaUpgrades.load();
-    TDState.castle = new Castle();
-    TDState.hero = new Hero();
-    TDState.waveManager = new WaveManager();
-    UpgradeManager.init();
-
+    setupCanvas(); MetaUpgrades.load(); TDState.castle = new Castle();
+    TDState.hero = new Hero(); TDState.waveManager = new WaveManager(); UpgradeManager.init();
     if (loadGame()) {
         document.getElementById('start-button').textContent = "Resume";
         document.getElementById('call-wave-button').style.display = 'block';
-    } else {
-        TDState.gold = 100 + MetaUpgrades.getBonus('startingGold');
-    }
-    
-    updateUI();
-    draw();
+    } else { TDState.gold = 100 + MetaUpgrades.getBonus('startingGold'); }
+    updateUI(); draw();
 }
-
 function startGame() {
     if (TDState.running || TDState.gameOver) return;
     TDState.running = true;
@@ -656,7 +572,6 @@ function startGame() {
     else { TDState.betweenWaves = true; document.getElementById('call-wave-button').style.display = 'block'; }
     gameLoop(TDState.lastTime);
 }
-
 function pauseGame() {
     if (!TDState.running) return;
     TDState.running = false;
@@ -666,16 +581,13 @@ function pauseGame() {
     saveGame();
     cancelAnimationFrame(animationFrameId);
 }
-
 function callWaveEarly() {
     if (TDState.betweenWaves && !TDState.waveManager.spawning) {
         const bonus = 5 * (TDState.wave + 1); TDState.gold += bonus;
         floatingTextPool.get(`Early Bonus! +${bonus}`, canvasWidth/2, canvasHeight - 150, '#ffeb3b');
-        TDState.waveManager.startNextWave();
-        AudioManager.play('ui_click');
+        TDState.waveManager.startNextWave(); AudioManager.play('ui_click');
     }
 }
-
 function useEmpBlast() {
     const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
     if (cooldownTime <= 0) {
@@ -686,28 +598,20 @@ function useEmpBlast() {
         particlePool.spawn(TDState.hero.x, TDState.hero.y, 100, '#82ccdd');
     }
 }
-
-// NEW: Castle HP Upgrade Function
 function upgradeCastleHp() {
     const stat = 'castleHp';
     if (!UpgradeManager.canAffordUpgrade(stat)) {
         floatingTextPool.get('Not enough gold!', canvasWidth / 2, canvasHeight - 150, '#ef5350', 1000);
-        AudioManager.play('error');
-        return;
+        AudioManager.play('error'); return;
     }
-    UpgradeManager.payForUpgrade(stat);
-    AudioManager.play('upgrade');
-    
-    // Increase max HP and heal for the same amount
+    UpgradeManager.payForUpgrade(stat); AudioManager.play('upgrade');
     const oldMaxHp = TDState.castle.maxHp;
-    TDState.castle.maxHp += 50;
+    TDState.castle.maxHp = Math.min(MAXS.CASTLE_HP, TDState.castle.maxHp + 50);
     const hpGained = TDState.castle.maxHp - oldMaxHp;
     TDState.castle.hp += hpGained;
-
     floatingTextPool.get(`+50 Max HP`, canvasWidth / 2, canvasHeight - 150, '#4caf50', 800);
     updateUI();
 }
-
 
 // ---------------------------- Event Listeners ----------------------------
 function handleJoystickStart(e) {
@@ -717,7 +621,6 @@ function handleJoystickStart(e) {
     joystick.start.x = touch.clientX - rect.left; joystick.start.y = touch.clientY - rect.top;
     joystick.current.x = joystick.start.x; joystick.current.y = joystick.start.y;
 }
-
 function handleJoystickMove(e) {
     if (!joystick.active) return; e.preventDefault();
     const rect = canvas.getBoundingClientRect(); const touch = e.changedTouches ? e.changedTouches[0] : e;
@@ -733,12 +636,10 @@ function handleJoystickMove(e) {
     joystick.current.y = joystick.start.y + Math.sin(angle) * clampedDist;
     joystick.vector.x = Math.cos(angle); joystick.vector.y = Math.sin(angle);
 }
-
 function handleJoystickEnd(e) {
     if (!joystick.active) return; e.preventDefault();
     joystick.active = false; joystick.vector.x = 0; joystick.vector.y = 0;
 }
-
 document.addEventListener('DOMContentLoaded', () => {
     AudioManager.init(['shoot', 'enemy_hit', 'enemy_die', 'castle_hit', 'wave_start', 'wave_clear', 'upgrade', 'error', 'emp_blast', 'ui_click']);
     initGame();
@@ -757,5 +658,5 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('upgrade-fireRate').addEventListener('click', () => TDState.hero.upgrade('fireRate'));
     document.getElementById('upgrade-range').addEventListener('click', () => TDState.hero.upgrade('range'));
     document.getElementById('upgrade-crit').addEventListener('click', () => TDState.hero.upgrade('crit'));
-    document.getElementById('upgrade-castle-hp').addEventListener('click', upgradeCastleHp); // NEW event listener
+    document.getElementById('upgrade-castle-hp').addEventListener('click', upgradeCastleHp);
 });
