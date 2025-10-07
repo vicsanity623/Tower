@@ -1,30 +1,33 @@
 /*
-    Vics Tower Defense - Game.js Revision 3 (Patched for AI Enhanced UI)
-    - Implemented Castle with HP and collision detection.
-    - Player tower moved to a fixed defensive position.
-    - Added randomized enemy path generation for each wave.
-    - Corrected wave completion logic.
-    - UI elements updated to match AI-enhanced CSS.
-    - Added visual enhancements to drawing for entities.
+    Vics Tower Defense - Revision 5 (The Evolution Update)
+    - Replaced static Tower with a movable Hero controlled by an invisible joystick.
+    - Implemented diverse enemy types: Tank, Runner, Healer, and Splitting slimes.
+    - Added an active player ability: EMP Blast with a cooldown.
+    - Added "Call Wave Early" button for bonus gold and faster pacing.
+    - Implemented "Game Juice": Screen shake, particle effects, hit flashes.
+    - Integrated a sound effects framework (requires audio files).
+    - Built a permanent meta-progression system using Gems and localStorage.
 */
 
 // ---------------------------- Configuration ----------------------------
 const TD_CONFIG = {
     canvasId: 'gameCanvas',
-    baseGoldPerEnemy: 15,
-    waveStartDelay: 2000,
+    waveStartDelay: 3000,
     spawnInterval: 600,
 };
 
 const MAXS = {
-    TOWER_DAMAGE: 10000,
-    TOWER_RANGE: 900,
-    TOWER_FIRE_RATE: 50,
+    HERO_DAMAGE: 10000,
+    HERO_RANGE: 500,
+    HERO_FIRE_RATE: 20,
     CRIT_CHANCE: 90,
     CASTLE_HP: 1000,
 };
 
-const UPGRADE_COST_MULT = 1.15;
+const UPGRADE_COST_MULT = 1.18;
+const ABILITY_COOLDOWNS = {
+    empBlast: 45000 // 45 seconds in milliseconds
+};
 
 // ---------------------------- Canvas & Context Setup ----------------------------
 let canvas = null;
@@ -42,65 +45,160 @@ function setupCanvas() {
     ctx.scale(dpr, dpr);
     canvasWidth = rect.width;
     canvasHeight = rect.height;
-
-    // IMPORTANT: Set font styles for canvas drawing here to match new UI fonts
-    // Floating texts
-    ctx.font = 'bold 16px "Orbitron", sans-serif'; // Default for floating texts
+    ctx.font = 'bold 16px "Orbitron", sans-serif';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle'; // Center text vertically
+    ctx.textBaseline = 'middle';
 }
 
 // ---------------------------- Game Path Generation ----------------------------
 const gamePath = [];
 const pathPresets = [
-    // Path 1 (Original S-Curve)
-    (w, h) => [{ x: w * 0.7, y: -50 }, { x: w * 0.7, y: h * 0.2 }, { x: w * 0.3, y: h * 0.4 }, { x: w * 0.3, y: h * 0.6 }, { x: w * 0.8, y: h * 0.8 }, { x: w * 0.8, y: h * 0.95 }],
-    // Path 2 (Center Zig-Zag)
-    (w, h) => [{ x: w * 0.5, y: -50 }, { x: w * 0.5, y: h * 0.1 }, { x: w * 0.2, y: h * 0.3 }, { x: w * 0.8, y: h * 0.5 }, { x: w * 0.2, y: h * 0.7 }, { x: w * 0.5, y: h * 0.95 }],
-    // Path 3 (Left-Side Heavy)
-    (w, h) => [{ x: w * 0.2, y: -50 }, { x: w * 0.2, y: h * 0.4 }, { x: w * 0.6, y: h * 0.5 }, { x: w * 0.6, y: h * 0.8 }, { x: w * 0.4, y: h * 0.95 }],
-    // Path 4 (Right-Side Heavy)
-    (w, h) => [{ x: w * 0.9, y: -50 }, { x: w * 0.9, y: h * 0.3 }, { x: w * 0.3, y: h * 0.4 }, { x: w * 0.3, y: h * 0.7 }, { x: w * 0.6, y: h * 0.95 }],
+    (w, h) => [{ x: w * 0.7, y: -50 }, { x: w * 0.7, y: h * 0.2 }, { x: w * 0.3, y: h * 0.4 }, { x: w * 0.3, y: h * 0.6 }, { x: w * 0.8, y: h * 0.8 }, { x: w * 0.8, y: h + 50 }],
+    (w, h) => [{ x: w * 0.5, y: -50 }, { x: w * 0.5, y: h * 0.1 }, { x: w * 0.2, y: h * 0.3 }, { x: w * 0.8, y: h * 0.5 }, { x: w * 0.2, y: h * 0.7 }, { x: w * 0.5, y: h + 50 }],
+    (w, h) => [{ x: w * 0.2, y: -50 }, { x: w * 0.2, y: h * 0.4 }, { x: w * 0.6, y: h * 0.5 }, { x: w * 0.6, y: h * 0.8 }, { x: w * 0.4, y: h + 50 }],
+    (w, h) => [{ x: w * 0.9, y: -50 }, { x: w * 0.9, y: h * 0.3 }, { x: w * 0.3, y: h * 0.4 }, { x: w * 0.3, y: h * 0.7 }, { x: w * 0.6, y: h + 50 }],
 ];
-let currentPathIndex = 0;
 
 function generateNewPath() {
     gamePath.length = 0;
-    currentPathIndex = Math.floor(Math.random() * pathPresets.length);
+    const currentPathIndex = Math.floor(Math.random() * pathPresets.length);
     const generatedPoints = pathPresets[currentPathIndex](canvasWidth, canvasHeight);
     gamePath.push(...generatedPoints);
 }
-
 
 // ---------------------------- Core Game State ----------------------------
 const TDState = {
     running: false,
     gameOver: false,
+    betweenWaves: true,
     lastTime: 0,
     gold: 100,
     wave: 0,
     enemiesKilled: 0,
+    gemsEarned: 0,
     enemies: [],
     projectiles: [],
+    particles: [],
     floatingTexts: [],
-    tower: null,
+    hero: null,
     castle: null,
     waveManager: null,
+    screenShake: { intensity: 0, duration: 0 },
+    abilities: {
+        empBlast: { lastUsed: -ABILITY_COOLDOWNS.empBlast }
+    }
 };
 
-// ---------------------------- Utility Functions & Text Pool ----------------------------
+// ---------------------------- Joystick State ----------------------------
+const joystick = {
+    active: false,
+    radius: 60,
+    deadzone: 10,
+    start: { x: 0, y: 0 },
+    current: { x: 0, y: 0 },
+    vector: { x: 0, y: 0 }
+};
+
+// ---------------------------- Meta Progression & Storage ----------------------------
+const MetaUpgrades = {
+    upgrades: {
+        startingGold: { name: "Starting Gold", level: 0, maxLevel: 10, cost: 5, bonus: 10 }, // +10 gold per level
+        critChance: { name: "Crit Chance", level: 0, maxLevel: 10, cost: 8, bonus: 0.5 },  // +0.5% crit per level
+        upgradeDiscount: { name: "Upgrade Discount", level: 0, maxLevel: 10, cost: 10, bonus: 1 }, // -1% cost per level
+    },
+    gems: 0,
+
+    getCost(stat) { return this.upgrades[stat].cost * (this.upgrades[stat].level + 1); },
+    getBonus(stat) {
+        const upgrade = this.upgrades[stat];
+        if (stat === 'upgradeDiscount') {
+            return 1 - (upgrade.level * upgrade.bonus) / 100;
+        }
+        return upgrade.level * upgrade.bonus;
+    },
+    purchase(stat) {
+        if (this.gems >= this.getCost(stat) && this.upgrades[stat].level < this.upgrades[stat].maxLevel) {
+            this.gems -= this.getCost(stat);
+            this.upgrades[stat].level++;
+            this.save();
+            AudioManager.play('upgrade');
+            return true;
+        }
+        AudioManager.play('error');
+        return false;
+    },
+    save() {
+        const saveData = {
+            gems: this.gems,
+            levels: {
+                startingGold: this.upgrades.startingGold.level,
+                critChance: this.upgrades.critChance.level,
+                upgradeDiscount: this.upgrades.upgradeDiscount.level,
+            }
+        };
+        localStorage.setItem('slimeTDSaveData', JSON.stringify(saveData));
+    },
+    load() {
+        const saved = localStorage.getItem('slimeTDSaveData');
+        if (saved) {
+            const data = JSON.parse(saved);
+            this.gems = data.gems || 0;
+            this.upgrades.startingGold.level = data.levels.startingGold || 0;
+            this.upgrades.critChance.level = data.levels.critChance || 0;
+            this.upgrades.upgradeDiscount.level = data.levels.upgradeDiscount || 0;
+        }
+    }
+};
+
+// ---------------------------- Audio Manager ----------------------------
+const AudioManager = {
+    sounds: {},
+    init(soundList) {
+        soundList.forEach(name => {
+            // This assumes you have an /audio/ folder with these files
+            this.sounds[name] = new Audio(`audio/${name}.mp3`);
+            this.sounds[name].volume = 0.5;
+        });
+    },
+    play(name) {
+        if (this.sounds[name]) {
+            this.sounds[name].currentTime = 0;
+            this.sounds[name].play().catch(e => console.log("Audio play failed. User interaction needed."));
+        }
+    }
+};
+
+// ---------------------------- Utility & Object Pools ----------------------------
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function now() { return performance.now(); }
-const floatingTextPool = {
+
+const genericPool = (creator) => ({
     pool: [],
-    get(text, x, y, color = 'white', ttl = 1000, font = 'bold 16px "Orbitron", sans-serif') { // Added font parameter
-        let obj = this.pool.length > 0 ? this.pool.pop() : {};
-        obj.text = text; obj.x = x; obj.y = y; obj.color = color; obj.ttl = ttl;
-        obj.spawnTime = now();
-        obj.font = font; // Store font with the object
-        TDState.floatingTexts.push(obj);
-    },
+    get() { return this.pool.length > 0 ? this.pool.pop() : creator(); },
     release(obj) { this.pool.push(obj); }
+});
+
+const floatingTextPool = genericPool(() => ({}));
+floatingTextPool.get = function(text, x, y, color = 'white', ttl = 1000, font = 'bold 16px "Orbitron", sans-serif') {
+    let obj = this.pool.length > 0 ? this.pool.pop() : {};
+    obj.text = text; obj.x = x; obj.y = y; obj.color = color; obj.ttl = ttl;
+    obj.spawnTime = now(); obj.font = font;
+    TDState.floatingTexts.push(obj);
+};
+
+const particlePool = genericPool(() => ({}));
+particlePool.spawn = function(x, y, count, color) {
+    for (let i = 0; i < count; i++) {
+        let p = this.get();
+        p.x = x; p.y = y;
+        p.vx = (Math.random() - 0.5) * 150;
+        p.vy = (Math.random() - 0.5) * 150;
+        p.ttl = Math.random() * 500 + 200;
+        p.spawnTime = now();
+        p.color = color;
+        p.size = Math.random() * 3 + 2;
+        TDState.particles.push(p);
+    }
 };
 
 // ---------------------------- Castle Class ----------------------------
@@ -108,129 +206,141 @@ class Castle {
     constructor() {
         this.hp = MAXS.CASTLE_HP;
         this.maxHp = MAXS.CASTLE_HP;
-        // Position the castle at the bottom edge of the *canvas*
-        // The UI handles its own positioning on top of this.
-        this.x = 0;
-        this.y = canvasHeight - 50; // Give it a fixed height from the bottom of the canvas
-        this.width = canvasWidth;
-        this.height = 50; // Visual height for the canvas element
+        this.y = canvasHeight;
     }
     takeDamage(amount) {
         this.hp = Math.max(0, this.hp - amount);
-        // Using `calc(canvasWidth / 2)` for floating text position for visual consistency.
-        floatingTextPool.get(`-${amount}`, canvasWidth / 2, this.y + this.height / 2, '#ef5350', 1200, 'bold 24px "Orbitron", sans-serif'); // Brighter red, larger font
+        TDState.screenShake = { intensity: 15, duration: 500 };
+        AudioManager.play('castle_hit');
+        floatingTextPool.get(`-${amount}`, canvasWidth / 2, this.y - 80, '#ef5350', 1200, 'bold 24px "Orbitron", sans-serif');
         if (this.hp <= 0) {
             TDState.gameOver = true;
             TDState.running = false;
-            floatingTextPool.get('GAME OVER', canvasWidth / 2, canvasHeight / 2, '#ef5350', 5000, 'bold 48px "Bangers", cursive'); // More impactful game over
+            MetaUpgrades.gems += TDState.gemsEarned;
+            MetaUpgrades.save();
+            showGameOverScreen();
         }
         updateUI();
     }
-    draw(ctx) {
-        // The castle itself isn't drawn here; it's represented by the bottom area
-        // and the HP bar. We might draw a symbolic base if needed, but for now
-        // it's abstract.
-        // ctx.fillStyle = '#2c3a58'; // panel-bg
-        // ctx.fillRect(this.x, this.y, this.width, this.height);
-        // ctx.strokeStyle = '#232d43'; // panel-border
-        // ctx.lineWidth = 2;
-        // ctx.strokeRect(this.x, this.y, this.width, this.height);
-    }
+    draw(ctx) { /* Castle is now an abstract line at the bottom */ }
 }
 
+// ---------------------------- Enemy Definitions & Class ----------------------------
+const EnemyTypes = {
+    NORMAL: { hp: 30, speed: 40, reward: 5, size: 20, color: '#ff6b6b' },
+    TANK: { hp: 100, speed: 25, reward: 10, size: 30, color: '#4834d4' },
+    RUNNER: { hp: 15, speed: 80, reward: 3, size: 15, color: '#1dd1a1' },
+    HEALER: { hp: 40, speed: 30, reward: 15, size: 22, color: '#feca57', special: 'HEAL' },
+    SPLITTER: { hp: 50, speed: 35, reward: 8, size: 28, color: '#ff9ff3', special: 'SPLIT' }
+};
 
-// ---------------------------- Enemy Class ----------------------------
 class Enemy {
     constructor() { this.reset(); }
     reset() {
         this.active = false;
-        this.x = 0; this.y = 0;
-        this.hp = 1; this.maxHp = 1;
-        this.speed = 20;
-        this.reward = 5;
-        this.size = 20;
-        this.pathIndex = 0;
-        this.color = '#c75869'; // Default slime color
+        this.type = null;
+        this.x = 0; this.y = 0; this.hp = 1; this.maxHp = 1; this.speed = 20;
+        this.reward = 5; this.size = 20; this.pathIndex = 0; this.color = '#c75869';
+        this.special = null; this.specialTimer = 0;
+        this.stunnedUntil = 0; this.hitFlash = 0;
     }
-    init(template) {
+    init(type, waveModifier) {
         this.active = true;
-        this.x = gamePath[0].x;
-        this.y = gamePath[0].y;
-        this.hp = template.hp; this.maxHp = template.hp;
-        this.speed = template.speed;
-        this.reward = template.reward;
+        this.type = type;
+        this.x = gamePath[0].x; this.y = gamePath[0].y;
+        this.hp = type.hp * waveModifier; this.maxHp = this.hp;
+        this.speed = type.speed;
+        this.reward = type.reward;
+        this.size = type.size;
+        this.color = type.color;
+        this.special = type.special;
         this.pathIndex = 1;
-        // Randomize enemy color slightly
-        const hue = Math.floor(Math.random() * 60) + 330; // Red-pinkish hues
-        const saturation = Math.floor(Math.random() * 30) + 70; // 70-100%
-        const lightness = Math.floor(Math.random() * 10) + 50; // 50-60%
-        this.color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        this.stunnedUntil = 0;
     }
     update(dt) {
         if (!this.active) return;
         
+        if (this.hitFlash > 0) this.hitFlash -= dt * 1000;
+        if (now() < this.stunnedUntil) {
+            // Pulsate when stunned
+            const pulse = Math.sin(now() / 50) * 2;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size / 2 + pulse, 0, Math.PI * 2);
+            ctx.fill();
+            return; // Skip movement and specials if stunned
+        }
+
         if (this.pathIndex >= gamePath.length) {
             this.reachEnd();
             return;
         }
 
         const target = gamePath[this.pathIndex];
-        const dx = target.x - this.x;
-        const dy = target.y - this.y;
+        const dx = target.x - this.x, dy = target.y - this.y;
         const dist = Math.hypot(dx, dy);
-
-        if (dist < 1) { // Close enough to next point
-            this.pathIndex++;
-        } else {
+        if (dist < 1) { this.pathIndex++; } 
+        else {
             this.x += (dx / dist) * this.speed * dt;
             this.y += (dy / dist) * this.speed * dt;
+        }
+
+        // Special abilities
+        if (this.special === 'HEAL') {
+            this.specialTimer += dt * 1000;
+            if (this.specialTimer > 3000) { // Heal every 3 seconds
+                this.specialTimer = 0;
+                let healed = false;
+                TDState.enemies.forEach(e => {
+                    if (e.active && e !== this && Math.hypot(this.x - e.x, this.y - e.y) < 60 && e.hp < e.maxHp) {
+                        e.hp = Math.min(e.maxHp, e.hp + this.maxHp * 0.1); // Heal 10% of healer's max HP
+                        healed = true;
+                    }
+                });
+                if (healed) particlePool.spawn(this.x, this.y, 10, '#00ff00');
+            }
         }
     }
     draw(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
 
-        // Slime body with blob effect (simple arc for now)
+        if (this.special === 'HEAL') {
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 60, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2); ctx.fill();
 
-        // Eyes
+        if (this.hitFlash > 0) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.hitFlash / 100})`;
+            ctx.beginPath(); ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2); ctx.fill();
+        }
+
         ctx.fillStyle = 'white';
-        ctx.beginPath();
-        ctx.arc(-this.size / 4, -this.size / 4, this.size / 8, 0, Math.PI * 2);
-        ctx.arc(this.size / 4, -this.size / 4, this.size / 8, 0, Math.PI * 2);
-        ctx.fill();
-        // Pupils
+        ctx.beginPath(); ctx.arc(-this.size / 4, -this.size / 4, this.size / 8, 0, Math.PI * 2);
+        ctx.arc(this.size / 4, -this.size / 4, this.size / 8, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'black';
-        ctx.beginPath();
-        ctx.arc(-this.size / 4, -this.size / 4, this.size / 16, 0, Math.PI * 2);
-        ctx.arc(this.size / 4, -this.size / 4, this.size / 16, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(-this.size / 4, -this.size / 4, this.size / 16, 0, Math.PI * 2);
+        ctx.arc(this.size / 4, -this.size / 4, this.size / 16, 0, Math.PI * 2); ctx.fill();
 
-        // HP Bar above enemy
         const hpPct = this.hp / this.maxHp;
-        const hpBarWidth = this.size + 10;
-        const hpBarHeight = 5;
-        const hpBarYOffset = -this.size / 2 - 10;
-
-        ctx.fillStyle = 'rgba(0,0,0,0.5)'; // Dark background for HP bar
-        ctx.fillRect(-hpBarWidth / 2, hpBarYOffset, hpBarWidth, hpBarHeight);
-        
-        // HP bar gradient
-        const gradient = ctx.createLinearGradient(-hpBarWidth / 2, 0, hpBarWidth / 2, 0);
-        gradient.addColorStop(0, '#ef5350'); // Red for low HP
-        gradient.addColorStop(0.5, '#ffeb3b'); // Yellow for mid HP
-        gradient.addColorStop(1, '#4caf50'); // Green for high HP
-        
-        ctx.fillStyle = gradient;
-        ctx.fillRect(-hpBarWidth / 2, hpBarYOffset, hpBarWidth * hpPct, hpBarHeight);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(-this.size/2, -this.size/2 - 10, this.size, 4);
+        const hpColor = hpPct > 0.6 ? '#4caf50' : hpPct > 0.3 ? '#ffeb3b' : '#ef5350';
+        ctx.fillStyle = hpColor;
+        ctx.fillRect(-this.size/2, -this.size/2 - 10, this.size * hpPct, 4);
 
         ctx.restore();
     }
     takeDamage(dmg) {
+        if (!this.active) return false;
         this.hp -= dmg;
+        this.hitFlash = 100;
+        AudioManager.play('enemy_hit');
         if (this.hp <= 0) {
             this.die();
             return true;
@@ -241,35 +351,43 @@ class Enemy {
         this.active = false;
         TDState.enemiesKilled++;
         TDState.gold += this.reward;
-        floatingTextPool.get(`+${this.reward}`, this.x, this.y, '#ffeb3b'); // Accent gold
-        // Release the enemy back to a pool for reuse if you have one
+        particlePool.spawn(this.x, this.y, 20, this.color);
+        AudioManager.play('enemy_die');
+        floatingTextPool.get(`+${this.reward}`, this.x, this.y, '#ffeb3b');
+        
+        if (this.special === 'SPLIT') {
+            const childrenToSpawn = 2;
+            for (let i = 0; i < childrenToSpawn; i++) {
+                let e = TDState.enemies.find(en => !en.active);
+                if (!e) { e = new Enemy(); TDState.enemies.push(e); }
+                // Children are Normal type but smaller and give less reward
+                let childType = { ...EnemyTypes.NORMAL, size: 15, reward: 1 };
+                e.init(childType, 1);
+                // Offset their spawn position slightly
+                e.x = this.x + (i * 20 - 10);
+                e.y = this.y;
+            }
+        }
     }
     reachEnd() {
         this.active = false;
-        TDState.castle.takeDamage(10); // Each enemy deals 10 damage
-        // Release the enemy back to a pool
+        TDState.castle.takeDamage(10);
     }
 }
 
-// ---------------------------- Projectile & Tower Classes (largely unchanged) ----------------------------
+// ---------------------------- Projectile & Hero Classes ----------------------------
 class Projectile {
     constructor() { this.active = false; }
-    init(x, y, target, damage, isCrit = false) { // Added isCrit flag
-        this.active = true;
-        this.x = x; this.y = y;
-        this.target = target;
-        this.damage = damage;
-        this.speed = 400;
-        this.spawnTime = now();
-        this.isCrit = isCrit; // Store if it's a critical hit
+    init(x, y, target, damage, isCrit = false) {
+        this.active = true; this.x = x; this.y = y; this.target = target;
+        this.damage = damage; this.speed = 500; this.spawnTime = now();
+        this.isCrit = isCrit;
     }
     update(dt) {
         if (!this.active || !this.target.active || now() - this.spawnTime > 3000) {
-            this.active = false;
-            return;
+            this.active = false; return;
         }
-        const dx = this.target.x - this.x;
-        const dy = this.target.y - this.y;
+        const dx = this.target.x - this.x, dy = this.target.y - this.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 10) {
             this.target.takeDamage(this.damage);
@@ -281,143 +399,101 @@ class Projectile {
     }
     draw(ctx) {
         ctx.save();
-        ctx.translate(this.x, this.y);
-
-        // Projectile glow effect
-        const baseColor = this.isCrit ? '#ffeb3b' : '#e0e0ff'; // Gold for crit, light blue for normal
-        ctx.shadowColor = baseColor;
-        ctx.shadowBlur = this.isCrit ? 15 : 8; // More blur for crit
-
+        const baseColor = this.isCrit ? '#ffeb3b' : '#e0e0ff';
+        ctx.shadowColor = baseColor; ctx.shadowBlur = this.isCrit ? 15 : 8;
         ctx.fillStyle = baseColor;
-        ctx.beginPath();
-        ctx.arc(0, 0, this.isCrit ? 6 : 4, 0, Math.PI * 2); // Larger for crit
-        ctx.fill();
-
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.isCrit ? 6 : 4, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
     }
 }
 
-class Tower {
+class Hero {
     constructor() {
         this.x = canvasWidth / 2;
-        this.y = canvasHeight * 0.9; // Positioned in front of the castle
-        this.damage = 25;
-        this.range = 180;
-        this.fireRate = 1.2;
-        this.crit = 5;
-        this.lastShot = 0;
-        this.muzzleFlash = 0; // Timer for muzzle flash effect
+        this.y = canvasHeight * 0.8;
+        this.speed = 150;
+        this.damage = 25 + MetaUpgrades.getBonus('damage');
+        this.range = 180 + MetaUpgrades.getBonus('range');
+        this.fireRate = 1.2 + MetaUpgrades.getBonus('fireRate');
+        this.crit = 5 + MetaUpgrades.getBonus('critChance');
+        this.lastShot = 0; this.muzzleFlash = 0;
+    }
+    update(dt) {
+        if (joystick.active) {
+            this.x += joystick.vector.x * this.speed * dt;
+            this.y += joystick.vector.y * this.speed * dt;
+            this.x = clamp(this.x, 20, canvasWidth - 20);
+            this.y = clamp(this.y, 20, canvasHeight - 20);
+        }
+
+        const target = this.findTarget();
+        this.shootAt(target);
+
+        if(this.muzzleFlash > 0) this.muzzleFlash -= dt * 1000;
     }
     findTarget() {
-        let best = null;
-        let bestDist = Infinity;
-        for (const e of TDState.enemies) {
-            if (!e.active) continue;
+        let best = null, bestDist = Infinity;
+        TDState.enemies.forEach(e => {
+            if (!e.active) return;
             const d = Math.hypot(e.x - this.x, e.y - this.y);
             if (d <= this.range && d < bestDist) {
-                best = e;
-                bestDist = d;
+                best = e; bestDist = d;
             }
-        }
+        });
         return best;
     }
     shootAt(target) {
         if (!target || now() - this.lastShot < 1000 / this.fireRate) return;
-        this.lastShot = now();
-        this.muzzleFlash = 100; // Reset muzzle flash duration
+        this.lastShot = now(); this.muzzleFlash = 100;
 
-        const crit = Math.random() * 100 < this.crit;
-        const damage = this.damage * (crit ? 2.5 : 1.0);
+        AudioManager.play('shoot');
+        const isCrit = Math.random() * 100 < this.crit;
+        const damage = this.damage * (isCrit ? 2.5 : 1.0);
         
         let p = TDState.projectiles.find(pr => !pr.active) || new Projectile();
         if (!TDState.projectiles.includes(p)) TDState.projectiles.push(p);
-        p.init(this.x, this.y - 20, target, damage, crit); // Pass crit status to projectile
+        p.init(this.x, this.y, target, damage, isCrit);
 
-        const color = crit ? '#ffeb3b' : '#e0e0ff'; // Gold for crit, light blue for normal
-        const font = crit ? 'bold 20px "Press Start 2P", cursive' : 'bold 16px "Orbitron", sans-serif'; // Larger, more impactful font for crits
+        const color = isCrit ? '#ffeb3b' : '#e0e0ff';
+        const font = isCrit ? 'bold 20px "Press Start 2P", cursive' : 'bold 16px "Orbitron", sans-serif';
         floatingTextPool.get(`-${Math.round(damage)}`, target.x, target.y - 10, color, 600, font);
     }
     upgrade(stat) {
         if (!UpgradeManager.canAffordUpgrade(stat)) {
-            // Provide feedback if cannot afford
-            floatingTextPool.get('Not enough gold!', canvasWidth / 2, canvasHeight - 100, '#ef5350', 1000);
+            floatingTextPool.get('Not enough gold!', canvasWidth / 2, canvasHeight - 150, '#ef5350', 1000);
+            AudioManager.play('error');
             return;
         }
         UpgradeManager.payForUpgrade(stat);
-        let upgradeValue = 0;
+        AudioManager.play('upgrade');
+        let text = "";
         switch(stat) {
-            case 'damage':
-                this.damage = Math.min(MAXS.TOWER_DAMAGE, this.damage + 6);
-                upgradeValue = `+6 DMG`;
-                break;
-            case 'range':
-                this.range = Math.min(MAXS.TOWER_RANGE, this.range + 10);
-                upgradeValue = `+10 RNG`;
-                break;
-            case 'fireRate':
-                this.fireRate = Math.min(MAXS.TOWER_FIRE_RATE, this.fireRate + 0.1);
-                upgradeValue = `+0.1 SPD`;
-                break;
-            case 'crit':
-                this.crit = Math.min(MAXS.CRIT_CHANCE, this.crit + 1);
-                upgradeValue = `+1% CRIT`;
-                break;
+            case 'damage': this.damage = Math.min(MAXS.HERO_DAMAGE, this.damage + 6); text = `+6 DMG`; break;
+            case 'range': this.range = Math.min(MAXS.HERO_RANGE, this.range + 10); text = `+10 RNG`; break;
+            case 'fireRate': this.fireRate = Math.min(MAXS.HERO_FIRE_RATE, this.fireRate + 0.15); text = `+0.15 SPD`; break;
+            case 'crit': this.crit = Math.min(MAXS.CRIT_CHANCE, this.crit + 1); text = `+1% CRIT`; break;
         }
-        // Show upgrade text feedback
-        floatingTextPool.get(upgradeValue, this.x, this.y - 50, '#4caf50', 800);
+        floatingTextPool.get(text, this.x, this.y - 50, '#4caf50', 800);
         updateUI();
     }
     draw(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
-
-        // Range indicator (subtle glow)
-        ctx.fillStyle = "rgba(135, 153, 194, 0.05)"; // Very light fill
-        ctx.strokeStyle = "rgba(135, 153, 194, 0.2)"; // Light stroke
+        ctx.fillStyle = "rgba(135, 153, 194, 0.08)";
+        ctx.strokeStyle = "rgba(135, 153, 194, 0.25)";
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(0, 0, this.range, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Tower Base (more metallic/techy)
-        ctx.fillStyle = '#4f4f8a'; // Panel border color for base
-        ctx.beginPath();
-        ctx.arc(0, 0, 35, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#6a6ac2';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        // Tower Body (main component)
-        ctx.fillStyle = '#3a3a60'; // Panel bg light
-        ctx.beginPath();
-        ctx.roundRect(-20, -40, 40, 60, 10); // Rounded rectangle
-        ctx.fill();
-        ctx.strokeStyle = '#4f4f8a';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Tower Top/Gun barrel
-        ctx.fillStyle = '#1e1e3b'; // Panel bg dark
-        ctx.beginPath();
-        ctx.roundRect(-10, -55, 20, 20, 5);
-        ctx.fill();
-        ctx.strokeStyle = '#4f4f8a';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        // Muzzle Flash
-        if (this.muzzleFlash > 0) {
-            ctx.fillStyle = `rgba(255, 235, 59, ${this.muzzleFlash/100})`; // Bright gold flash
-            ctx.beginPath();
-            ctx.arc(0, -55, 15 * (this.muzzleFlash / 100), 0, Math.PI * 2); // Dynamic size
-            ctx.fill();
-            ctx.shadowColor = `rgba(255, 235, 59, ${this.muzzleFlash/100})`;
-            ctx.shadowBlur = 20;
-        }
+        ctx.beginPath(); ctx.arc(0, 0, this.range, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         
-        ctx.restore(); // Restore context to remove shadow blur for other elements
+        ctx.fillStyle = '#6a6ac2';
+        ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#e0e0ff';
+        ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill();
+        
+        if (this.muzzleFlash > 0) {
+            ctx.fillStyle = `rgba(255, 235, 59, ${this.muzzleFlash/100})`;
+            ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
     }
 }
 
@@ -430,7 +506,8 @@ const UpgradeManager = {
     getCost(stat) {
         const lvl = this.levels[stat];
         const base = this.baseCosts[stat];
-        return Math.ceil(base * Math.pow(UPGRADE_COST_MULT, lvl));
+        const discount = MetaUpgrades.getBonus('upgradeDiscount');
+        return Math.ceil(base * Math.pow(UPGRADE_COST_MULT, lvl) * discount);
     },
     canAffordUpgrade(stat) { return TDState.gold >= this.getCost(stat); },
     payForUpgrade(stat) {
@@ -443,49 +520,67 @@ const UpgradeManager = {
 class WaveManager {
     constructor() { this.reset(); }
     reset() {
-        this.wave = 0;
-        this.spawning = false;
-        this.enemiesToSpawn = 0;
-        this.spawned = 0;
-        this.spawnTimer = 0;
+        this.wave = 0; this.spawning = false; this.enemiesToSpawn = 0;
+        this.spawned = 0; this.spawnTimer = 0; this.waveComposition = [];
     }
     startNextWave() {
         if (this.spawning) return;
-        generateNewPath(); // Generate a new path for the new wave
+        TDState.betweenWaves = false;
+        document.getElementById('call-wave-button').style.display = 'none';
+        generateNewPath();
         this.wave++;
         TDState.wave = this.wave;
-        this.enemiesToSpawn = 8 + this.wave * 2;
-        this.spawned = 0;
-        this.spawnTimer = 0;
-        this.spawning = true;
-        floatingTextPool.get(`Wave ${this.wave} Incoming!`, canvasWidth / 2, canvasHeight * 0.4, '#e0e0ff', 2000, 'bold 32px "Bangers", cursive'); // More prominent wave text
-        updateUI(); // Update UI immediately when wave starts
+        this.generateWaveComposition();
+        this.enemiesToSpawn = this.waveComposition.length;
+        this.spawned = 0; this.spawnTimer = 0; this.spawning = true;
+        AudioManager.play('wave_start');
+        floatingTextPool.get(`Wave ${this.wave}`, canvasWidth / 2, canvasHeight * 0.4, '#e0e0ff', 2000, 'bold 32px "Bangers", cursive');
+        updateUI();
+    }
+    generateWaveComposition() {
+        this.waveComposition = [];
+        const baseCount = 8 + this.wave * 2;
+        for (let i = 0; i < baseCount; i++) this.waveComposition.push(EnemyTypes.NORMAL);
+        if (this.wave > 2) {
+            for (let i = 0; i < this.wave; i++) this.waveComposition.push(EnemyTypes.RUNNER);
+        }
+        if (this.wave > 4) {
+            for (let i = 0; i < Math.floor(this.wave / 2); i++) this.waveComposition.push(EnemyTypes.TANK);
+        }
+        if (this.wave > 6) {
+            for (let i = 0; i < Math.floor(this.wave / 3); i++) this.waveComposition.push(EnemyTypes.SPLITTER);
+        }
+        if (this.wave > 8) {
+            for (let i = 0; i < Math.floor(this.wave / 4); i++) this.waveComposition.push(EnemyTypes.HEALER);
+        }
+        // Shuffle the composition for variety
+        this.waveComposition.sort(() => Math.random() - 0.5);
     }
     update(dt) {
         if (!this.spawning) return;
-        const interval = Math.max(100, TD_CONFIG.spawnInterval - this.wave * 5);
+        const interval = Math.max(100, TD_CONFIG.spawnInterval - this.wave * 10);
         this.spawnTimer += dt * 1000;
         if (this.spawnTimer > interval && this.spawned < this.enemiesToSpawn) {
             this.spawnTimer = 0;
+            const enemyType = this.waveComposition[this.spawned];
             this.spawned++;
-            let e = TDState.enemies.find(en => !en.active) || new Enemy();
-            if (!TDState.enemies.includes(e)) TDState.enemies.push(e);
-            e.init({
-                hp: 30 * (1 + this.wave * 0.1),
-                speed: 40 + this.wave * 0.5,
-                reward: 5 + Math.floor(this.wave / 5),
-            });
+            let e = TDState.enemies.find(en => !en.active);
+            if (!e) { e = new Enemy(); TDState.enemies.push(e); }
+            const waveModifier = 1 + this.wave * 0.15;
+            e.init(enemyType, waveModifier);
         }
-        // Wave completion check
-        // Ensure all *active* enemies are accounted for
         const activeEnemiesCount = TDState.enemies.filter(e => e.active).length;
         if (this.spawned >= this.enemiesToSpawn && activeEnemiesCount === 0) {
             this.spawning = false;
-            const bonus = 10 * this.wave;
+            TDState.betweenWaves = true;
+            document.getElementById('call-wave-button').style.display = 'block';
+            const bonus = 15 * this.wave;
             TDState.gold += bonus;
-            floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive'); // Prominent bonus text
-            updateUI(); // Update UI for new gold
-            setTimeout(() => this.startNextWave(), TD_CONFIG.waveStartDelay); // Use configured delay
+            TDState.gemsEarned += 1;
+            AudioManager.play('wave_clear');
+            floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive');
+            updateUI();
+            // No auto-start, waits for player to press "Call Wave" button
         }
     }
 }
@@ -494,135 +589,149 @@ class WaveManager {
 let animationFrameId = null;
 
 function gameLoop(timestamp) {
-    if (!TDState.running || TDState.gameOver) { // Check gameOver here too
-        if (TDState.gameOver) {
-            // Optional: Show a "Restart" button or final score screen here
-        }
-        return;
-    }
-    const dt = (timestamp - TDState.lastTime) / 1000;
+    if (!TDState.running) return;
+    const dt = clamp((timestamp - TDState.lastTime) / 1000, 0.01, 0.1);
     TDState.lastTime = timestamp;
-    update(clamp(dt, 0.01, 0.1));
+    update(dt);
     draw();
     animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 function update(dt) {
+    if (TDState.gameOver) return;
     TDState.waveManager.update(dt);
+    TDState.hero.update(dt);
     TDState.enemies.forEach(e => e.update(dt));
+    TDState.projectiles = TDState.projectiles.filter(p => p.active);
     TDState.projectiles.forEach(p => p.update(dt));
-    const target = TDState.tower.findTarget();
-    TDState.tower.shootAt(target);
-    if(TDState.tower.muzzleFlash > 0) TDState.tower.muzzleFlash -= dt * 1000; // Decay muzzle flash
-    TDState.floatingTexts = TDState.floatingTexts.filter(ft => {
-        ft.y -= 30 * dt; // Faster vertical movement for visual pop
-        const alive = now() - ft.spawnTime < ft.ttl;
-        if (!alive) floatingTextPool.release(ft);
-        return alive;
-    });
-    updateUI(); // Call updateUI once per frame
+    TDState.particles = TDState.particles.filter(p => now() - p.spawnTime < p.ttl);
+    TDState.particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; });
+    TDState.floatingTexts = TDState.floatingTexts.filter(ft => now() - ft.spawnTime < ft.ttl);
+    TDState.floatingTexts.forEach(ft => { ft.y -= 30 * dt; });
+    
+    if (TDState.screenShake.duration > 0) {
+        TDState.screenShake.duration -= dt * 1000;
+        TDState.screenShake.intensity *= 0.9; // Decay
+    } else {
+        TDState.screenShake.intensity = 0;
+    }
+
+    updateUI();
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    if (TDState.screenShake.intensity > 0) {
+        const sx = (Math.random() - 0.5) * TDState.screenShake.intensity;
+        const sy = (Math.random() - 0.5) * TDState.screenShake.intensity;
+        ctx.translate(sx, sy);
+    }
 
-    // Draw Path (more visually distinct)
     if (gamePath.length > 0) {
-        ctx.strokeStyle = "rgba(79, 79, 138, 0.4)"; // var(--panel-border) with transparency
-        ctx.lineWidth = 50;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        ctx.moveTo(gamePath[0].x, gamePath[0].y);
-        for (let i = 1; i < gamePath.length; i++) {
-            ctx.lineTo(gamePath[i].x, gamePath[i].y);
-        }
+        ctx.strokeStyle = "rgba(79, 79, 138, 0.4)"; ctx.lineWidth = 50;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.beginPath(); ctx.moveTo(gamePath[0].x, gamePath[0].y);
+        for (let i = 1; i < gamePath.length; i++) ctx.lineTo(gamePath[i].x, gamePath[i].y);
         ctx.stroke();
-
-        // Inner path for visual detail
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; // Lighter inner line
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; ctx.lineWidth = 2;
         ctx.stroke();
     }
     
-    // Draw Objects
-    TDState.castle.draw(ctx); // Still call, even if it does nothing visible here
-    TDState.tower.draw(ctx);
+    TDState.castle.draw(ctx);
+    TDState.hero.draw(ctx);
     TDState.enemies.forEach(e => { if (e.active) e.draw(ctx); });
-    TDState.projectiles.forEach(p => { if (p.active) p.draw(ctx); });
-    
-    // Draw Floating Texts
-    TDState.floatingTexts.forEach(ft => {
-        ctx.font = ft.font; // Use the font stored with the floating text object
-        ctx.fillStyle = ft.color;
-        ctx.textAlign = 'center';
-        ctx.fillText(ft.text, ft.x, ft.y);
+    TDState.projectiles.forEach(p => p.draw(ctx));
+    TDState.particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
     });
+    TDState.floatingTexts.forEach(ft => {
+        ctx.font = ft.font; ctx.fillStyle = ft.color;
+        ctx.textAlign = 'center'; ctx.fillText(ft.text, ft.x, ft.y);
+    });
+    
+    // Draw Joystick
+    if (joystick.active) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(joystick.start.x, joystick.start.y, joystick.radius, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath(); ctx.arc(joystick.current.x, joystick.current.y, joystick.radius / 2, 0, Math.PI * 2); ctx.fill();
+    }
+
+    ctx.restore();
 }
 
 // ---------------------------- UI Integration ----------------------------
 function updateUI() {
-    // Update resource bar
     document.getElementById('gold-display').textContent = `Gold: ${Math.floor(TDState.gold)}`;
     document.getElementById('wave-display').textContent = `Wave: ${TDState.wave}`;
     document.getElementById('kills-display').textContent = `Kills: ${TDState.enemiesKilled}`;
 
-    // Update tower stats and costs
-    const tower = TDState.tower;
-    document.getElementById('damage-value').textContent = Math.round(tower.damage);
-    document.getElementById('fireRate-value').textContent = `${tower.fireRate.toFixed(2)}/s`;
-    document.getElementById('range-value').textContent = Math.round(tower.range);
-    document.getElementById('crit-value').textContent = `${tower.crit.toFixed(0)}%`;
-
+    const hero = TDState.hero;
+    document.getElementById('damage-value').textContent = Math.round(hero.damage);
+    document.getElementById('fireRate-value').textContent = `${hero.fireRate.toFixed(2)}/s`;
+    document.getElementById('range-value').textContent = Math.round(hero.range);
+    document.getElementById('crit-value').textContent = `${hero.crit.toFixed(0)}%`;
     document.getElementById('damage-cost').textContent = `Cost: ${UpgradeManager.getCost('damage')}`;
     document.getElementById('fireRate-cost').textContent = `Cost: ${UpgradeManager.getCost('fireRate')}`;
     document.getElementById('range-cost').textContent = `Cost: ${UpgradeManager.getCost('range')}`;
     document.getElementById('crit-cost').textContent = `Cost: ${UpgradeManager.getCost('crit')}`;
 
-    // Update Castle HP Bar
     const hpPct = (TDState.castle.hp / TDState.castle.maxHp) * 100;
     const castleHpBar = document.getElementById('castle-hp-bar');
     castleHpBar.style.width = `${hpPct}%`;
-
-    // Update the HP percentage text overlay
-    const hpTextOverlay = document.querySelector('#castle-hp-bar-container::after'); // This won't work directly on pseudo-element
-    // Instead, create a span inside the container for the text and update that.
     let hpTextSpan = document.getElementById('castle-hp-text-overlay');
     if (!hpTextSpan) {
-        hpTextSpan = document.createElement('span');
-        hpTextSpan.id = 'castle-hp-text-overlay';
+        hpTextSpan = document.createElement('span'); hpTextSpan.id = 'castle-hp-text-overlay';
         document.getElementById('castle-hp-bar-container').appendChild(hpTextSpan);
     }
-    // The text format is also slightly cleaned up for better readability
     hpTextSpan.textContent = `${Math.max(0, Math.floor(TDState.castle.hp))} / ${TDState.castle.maxHp}`;
-    
-    // Change HP bar color based on percentage (dynamic gradient)
-    if (hpPct > 60) {
-        castleHpBar.style.background = 'linear-gradient(to right, var(--accent-green), #90ee90)';
-    } else if (hpPct > 30) {
-        castleHpBar.style.background = 'linear-gradient(to right, #ffeb3b, #ffda4a)'; // Yellow/Gold
+    if (hpPct > 60) castleHpBar.style.background = 'linear-gradient(to right, var(--accent-green), #90ee90)';
+    else if (hpPct > 30) castleHpBar.style.background = 'linear-gradient(to right, #ffeb3b, #ffda4a)';
+    else castleHpBar.style.background = 'linear-gradient(to right, var(--accent-red), #ff7f7f)';
+
+    // Update Ability Button
+    const empButton = document.getElementById('emp-blast-button');
+    const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
+    if (cooldownTime > 0) {
+        empButton.disabled = true;
+        empButton.textContent = `${(cooldownTime / 1000).toFixed(1)}s`;
     } else {
-        castleHpBar.style.background = 'linear-gradient(to right, var(--accent-red), #ff7f7f)'; // Red
+        empButton.disabled = false;
+        empButton.textContent = 'EMP';
     }
 }
 
+function showGameOverScreen() {
+    document.getElementById('game-over-screen').style.display = 'flex';
+    document.getElementById('final-wave-stat').textContent = `Wave Reached: ${TDState.wave}`;
+    document.getElementById('final-kills-stat').textContent = `Slimes Defeated: ${TDState.enemiesKilled}`;
+    document.getElementById('gems-earned-stat').textContent = `Gems Earned: ${TDState.gemsEarned}`;
+}
 
 // ---------------------------- Game Control ----------------------------
 function initGame() {
     setupCanvas();
+    MetaUpgrades.load();
     UpgradeManager.init();
     TDState.castle = new Castle();
-    TDState.tower = new Tower();
+    TDState.hero = new Hero();
     TDState.waveManager = new WaveManager();
-    updateUI(); // Initial UI update
-    draw(); // Initial draw of the canvas
+    // Apply meta upgrades
+    TDState.gold = 100 + MetaUpgrades.getBonus('startingGold');
+
+    updateUI();
+    draw();
 }
 
 function startGame() {
     if (TDState.running || TDState.gameOver) return;
     TDState.running = true;
-    document.getElementById('start-button').disabled = true;
-    document.getElementById('pause-button').disabled = false;
+    document.getElementById('start-button').style.display = 'none';
+    document.getElementById('pause-button').style.display = 'block';
     TDState.lastTime = performance.now();
     if(TDState.wave === 0) {
         TDState.waveManager.startNextWave();
@@ -633,54 +742,105 @@ function startGame() {
 function pauseGame() {
     if (!TDState.running) return;
     TDState.running = false;
-    document.getElementById('start-button').disabled = false;
-    document.getElementById('pause-button').disabled = true;
-    if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
+    document.getElementById('start-button').style.display = 'block';
+    document.getElementById('pause-button').style.display = 'none';
+    cancelAnimationFrame(animationFrameId);
+}
+
+function callWaveEarly() {
+    if (TDState.betweenWaves && !TDState.waveManager.spawning) {
+        const bonus = 5 * TDState.wave;
+        TDState.gold += bonus;
+        floatingTextPool.get(`Early Bonus! +${bonus}`, canvasWidth/2, canvasHeight - 150, '#ffeb3b');
+        TDState.waveManager.startNextWave();
+        AudioManager.play('ui_click');
     }
 }
 
-
-// ---------------------------- Event Listeners (FIXED) ----------------------------
-
-// A helper function to delay execution
-function debounce(func, delay = 250) {
-    let timeout;
-    return (...args) => {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-            func.apply(this, args);
-        }, delay);
-    };
+function useEmpBlast() {
+    const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
+    if (cooldownTime <= 0) {
+        TDState.abilities.empBlast.lastUsed = now();
+        TDState.enemies.forEach(e => {
+            if (e.active) e.stunnedUntil = now() + 3000; // Stun for 3 seconds
+        });
+        TDState.screenShake = { intensity: 20, duration: 300 };
+        AudioManager.play('emp_blast');
+        particlePool.spawn(TDState.hero.x, TDState.hero.y, 100, '#82ccdd');
+    }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    initGame(); // Initialize the game once on load
+// ---------------------------- Event Listeners ----------------------------
+function handleJoystickStart(e) {
+    e.preventDefault();
+    joystick.active = true;
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.changedTouches ? e.changedTouches[0] : e;
+    joystick.start.x = touch.clientX - rect.left;
+    joystick.start.y = touch.clientY - rect.top;
+    joystick.current.x = joystick.start.x;
+    joystick.current.y = joystick.start.y;
+}
 
-    // Create a debounced version of the initGame function for resizing
-    const debouncedInit = debounce(() => {
-        // We only need to re-setup the canvas and tower positions, not the whole game state
-        setupCanvas();
-        if (TDState.tower) {
-            TDState.tower.x = canvasWidth / 2;
-            TDState.tower.y = canvasHeight * 0.9;
-        }
-        if (TDState.castle) {
-            TDState.castle.y = canvasHeight - 50;
-        }
-        // Redraw the canvas with the new dimensions
-        draw(); 
-    }, 250);
+function handleJoystickMove(e) {
+    if (!joystick.active) return;
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.changedTouches ? e.changedTouches[0] : e;
+    const moveX = touch.clientX - rect.left;
+    const moveY = touch.clientY - rect.top;
 
-    // Use the debounced function for the resize event
-    window.addEventListener('resize', debouncedInit);
+    const dx = moveX - joystick.start.x;
+    const dy = moveY - joystick.start.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < joystick.deadzone) {
+        joystick.vector.x = 0;
+        joystick.vector.y = 0;
+        joystick.current.x = moveX;
+        joystick.current.y = moveY;
+        return;
+    }
     
+    const angle = Math.atan2(dy, dx);
+    const clampedDist = Math.min(dist, joystick.radius);
+    joystick.current.x = joystick.start.x + Math.cos(angle) * clampedDist;
+    joystick.current.y = joystick.start.y + Math.sin(angle) * clampedDist;
+
+    joystick.vector.x = Math.cos(angle);
+    joystick.vector.y = Math.sin(angle);
+}
+
+function handleJoystickEnd(e) {
+    if (!joystick.active) return;
+    e.preventDefault();
+    joystick.active = false;
+    joystick.vector.x = 0;
+    joystick.vector.y = 0;
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    AudioManager.init(['shoot', 'enemy_hit', 'enemy_die', 'castle_hit', 'wave_start', 'wave_clear', 'upgrade', 'error', 'emp_blast', 'ui_click']);
+    initGame();
+    
+    // Joystick Listeners
+    canvas.addEventListener('mousedown', handleJoystickStart);
+    canvas.addEventListener('mousemove', handleJoystickMove);
+    canvas.addEventListener('mouseup', handleJoystickEnd);
+    canvas.addEventListener('mouseleave', handleJoystickEnd);
+    canvas.addEventListener('touchstart', handleJoystickStart, { passive: false });
+    canvas.addEventListener('touchmove', handleJoystickMove, { passive: false });
+    canvas.addEventListener('touchend', handleJoystickEnd);
+    canvas.addEventListener('touchcancel', handleJoystickEnd);
+
+    // Button Listeners
     document.getElementById('start-button').addEventListener('click', startGame);
     document.getElementById('pause-button').addEventListener('click', pauseGame);
-    document.getElementById('pause-button').disabled = true;
-
-    document.getElementById('upgrade-damage').addEventListener('click', () => TDState.tower.upgrade('damage'));
-    document.getElementById('upgrade-fireRate').addEventListener('click', () => TDState.tower.upgrade('fireRate'));
-    document.getElementById('upgrade-range').addEventListener('click', () => TDState.tower.upgrade('range'));
-    document.getElementById('upgrade-crit').addEventListener('click', () => TDState.tower.upgrade('crit'));
+    document.getElementById('call-wave-button').addEventListener('click', callWaveEarly);
+    document.getElementById('emp-blast-button').addEventListener('click', useEmpBlast);
+    document.getElementById('upgrade-damage').addEventListener('click', () => TDState.hero.upgrade('damage'));
+    document.getElementById('upgrade-fireRate').addEventListener('click', () => TDState.hero.upgrade('fireRate'));
+    document.getElementById('upgrade-range').addEventListener('click', () => TDState.hero.upgrade('range'));
+    document.getElementById('upgrade-crit').addEventListener('click', () => TDState.hero.upgrade('crit'));
 });
