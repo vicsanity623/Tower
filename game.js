@@ -573,12 +573,16 @@ function updateUI() {
 
     // NEW: Castle HP Upgrade UI Logic
     const castleUpgradeButton = document.getElementById('upgrade-castle-hp');
+    const uiPanel = document.getElementById('ui-panel'); // Get the panel itself
+    
     if (TDState.wave >= 25) {
         castleUpgradeButton.style.display = 'flex';
+        uiPanel.classList.add('expanded'); // Add the class to change the grid
         document.getElementById('castleHp-value').textContent = TDState.castle.maxHp;
         document.getElementById('castleHp-cost').textContent = `Cost: ${UpgradeManager.getCost('castleHp')}`;
     } else {
         castleUpgradeButton.style.display = 'none';
+        uiPanel.classList.remove('expanded'); // Remove the class if the button is hidden
     }
 }
 
