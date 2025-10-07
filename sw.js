@@ -1,5 +1,5 @@
 // Define the cache name and the files to cache
-const CACHE_NAME = 'vics-td-cache-v1.1.2';
+const CACHE_NAME = 'vics-td-cache-v1.1.3';
 const ASSETS_TO_CACHE = [
   './',
   'index.html',
