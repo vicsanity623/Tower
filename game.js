@@ -630,41 +630,66 @@ function initGame() {
 function startGame() {
     if (TDState.running || TDState.gameOver) return;
     TDState.running = true;
-    document.getElementById('start-button').disabled = true; // Disable start button
-    document.getElementById('pause-button').disabled = false; // Enable pause button
+    document.getElementById('start-button').disabled = true;
+    document.getElementById('pause-button').disabled = false;
     TDState.lastTime = performance.now();
-    if(TDState.wave === 0) { // Only start the first wave if not already started
+    if(TDState.wave === 0) {
         TDState.waveManager.startNextWave();
     }
     gameLoop(TDState.lastTime);
 }
 
 function pauseGame() {
-    if (!TDState.running) return; // Only pause if running
+    if (!TDState.running) return;
     TDState.running = false;
-    document.getElementById('start-button').disabled = false; // Enable start button
-    document.getElementById('pause-button').disabled = true; // Disable pause button
+    document.getElementById('start-button').disabled = false;
+    document.getElementById('pause-button').disabled = true;
     if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
     }
 }
 
-// ---------------------------- Event Listeners ----------------------------
+
+// ---------------------------- Event Listeners (FIXED) ----------------------------
+
+// A helper function to delay execution
+function debounce(func, delay = 250) {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+            func.apply(this, args);
+        }, delay);
+    };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    initGame();
-    // Re-initialize canvas on resize to handle DPR correctly and redraw elements
-    window.addEventListener('resize', () => {
-        initGame(); // Re-initializes everything, including path and object positions relative to new size
-        if (TDState.running) { // Resume game if it was running
-            startGame();
+    initGame(); // Initialize the game once on load
+
+    // Create a debounced version of the initGame function for resizing
+    const debouncedInit = debounce(() => {
+        // We only need to re-setup the canvas and tower positions, not the whole game state
+        setupCanvas();
+        if (TDState.tower) {
+            TDState.tower.x = canvasWidth / 2;
+            TDState.tower.y = canvasHeight * 0.9;
         }
-    });
+        if (TDState.castle) {
+            TDState.castle.y = canvasHeight - 50;
+        }
+        // Redraw the canvas with the new dimensions
+        draw(); 
+    }, 250);
+
+    // Use the debounced function for the resize event
+    window.addEventListener('resize', debouncedInit);
     
     document.getElementById('start-button').addEventListener('click', startGame);
     document.getElementById('pause-button').addEventListener('click', pauseGame);
-
-    // Disable pause button initially
     document.getElementById('pause-button').disabled = true;
 
     document.getElementById('upgrade-damage').addEventListener('click', () => TDState.tower.upgrade('damage'));
-    document.getElementById('
+    document.getElementById('upgrade-fireRate').addEventListener('click', () => TDState.tower.upgrade('fireRate'));
+    document.getElementById('upgrade-range').addEventListener('click', () => TDState.tower.upgrade('range'));
+    document.getElementById('upgrade-crit').addEventListener('click', () => TDState.tower.upgrade('crit'));
+});
