@@ -40,7 +40,7 @@
         #game-wrapper {
             width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: space-between; align-items: center;
-            max-width: 450px;
+            max-width: 550px; /* PATCH 1: Increased max-width for a wider layout */
             position: relative;
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
             background-color: rgba(0,0,0,0.2);
@@ -148,10 +148,6 @@
         }
         canvas { display: block; width: 100%; height: 100%; }
         
-        #ui-panel.expanded {
-            grid-template-columns: repeat(3, 1fr);
-        }
-        
         #ability-bar {
             width: 100%; display: flex; justify-content: center;
             gap: 15px; margin-top: -15px; margin-bottom: 15px;
@@ -177,7 +173,7 @@
             background: linear-gradient(to top, var(--panel-bg-dark), var(--panel-bg-light), var(--panel-bg-dark));
             border: 2px solid var(--panel-border); border-radius: 18px; padding: 15px;
             box-sizing: border-box; display: grid; 
-            grid-template-columns: repeat(2, 1fr); /* Default to 2 columns */
+            grid-template-columns: repeat(2, 1fr);
             gap: 12px; box-shadow: 0 -8px 20px rgba(0,0,0,var(--shadow-intensity)), inset 0 0 15px rgba(255,255,255,0.05);
         }
         .upgrade-button {
@@ -207,7 +203,6 @@
             font-family: 'Press Start 2P', cursive;
         }
         
-        /* NEW: Hide the castle upgrade button by default */
         #upgrade-castle-hp {
             display: none;
         }
@@ -245,9 +240,7 @@
     </style>
 </head>
 <body>
-
     <div id="game-wrapper">
-        
         <div id="top-ui-container">
             <header id="resource-bar">
                 <div id="gold-display" class="resource-item">Gold: 100</div>
@@ -258,24 +251,19 @@
                 <div id="castle-hp-bar" style="width: 100%;"></div>
             </div>
         </div>
-        
         <div id="game-controls">
             <button id="start-button" class="control-button">Start</button>
             <button id="pause-button" class="control-button">Pause</button>
         </div>
-
         <div id="canvas-overlay-container">
             <button id="call-wave-button">Call Wave (+Bonus)</button>
         </div>
-
         <main id="game-container">
             <canvas id="gameCanvas"></canvas>
         </main>
-
         <div id="ability-bar">
             <button id="emp-blast-button" class="ability-button">EMP</button>
         </div>
-
         <footer id="ui-panel">
             <div id="upgrade-damage" class="upgrade-button">
                 <span class="stat-name">Hero Attack</span>
@@ -297,14 +285,12 @@
                 <span id="crit-value" class="stat-value">5%</span>
                 <span id="crit-cost" class="upgrade-cost">Cost: 120</span>
             </div>
-            <!-- NEW: Castle HP Upgrade Button -->
             <div id="upgrade-castle-hp" class="upgrade-button">
                 <span class="stat-name">Castle HP</span>
                 <span id="castleHp-value" class="stat-value">1000</span>
                 <span id="castleHp-cost" class="upgrade-cost">Cost: 1000</span>
             </div>
         </footer>
-
         <div id="game-over-screen" class="modal-overlay">
             <div class="modal-panel">
                 <h2>Game Over</h2>
@@ -314,20 +300,14 @@
                 <button id="restart-button" class="modal-button" onclick="window.location.reload()">Play Again</button>
             </div>
         </div>
-
     </div>
-
     <script src="game.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(registration => {
-                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    })
-                    .catch(err => {
-                        console.log('ServiceWorker registration failed: ', err);
-                    });
+                    .then(registration => console.log('ServiceWorker registration successful with scope: ', registration.scope))
+                    .catch(err => console.log('ServiceWorker registration failed: ', err));
             });
         }
     </script>
