@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Tower Defense Idle</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #game-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        canvas {
+            display: block;
+            background-color: #0b1220;
+        }
+        #ui-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .ui-button {
+            padding: 12px 20px;
+            font-size: 16px;
+            color: white;
+            background-color: #333;
+            border: 2px solid #555;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        .ui-button:hover {
+            background-color: #555;
+        }
+        .ui-button:active {
+            transform: scale(0.95);
+        }
+        #start-button {
+            background-color: #28a745;
+            border-color: #218838;
+        }
+        #pause-button {
+            background-color: #ffc107;
+            border-color: #e0a800;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Your analytics, meta, ads, etc. can go here -->
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui-container">
+            <button id="start-button" class="ui-button">Start</button>
+            <button id="pause-button" class="ui-button">Pause</button>
+            <button id="upgrade-tower-damage" class="ui-button">Upgrade Damage</button>
+            <button id="upgrade-tower-range" class="ui-button">Upgrade Range</button>
+            <button id="upgrade-castle-hp" class="ui-button">Upgrade Castle HP</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('gameCanvas');
+            const gameContainer = document.getElementById('game-container');
+
+            function resizeCanvas() {
+                const dpr = window.devicePixelRatio || 1;
+                const rect = gameContainer.getBoundingClientRect();
+                
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
+                
+                canvas.style.width = `${rect.width}px`;
+                canvas.style.height = `${rect.height}px`;
+
+                const ctx = canvas.getContext('2d');
+                ctx.scale(dpr, dpr);
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            document.getElementById('start-button').addEventListener('click', () => {
+                if (typeof startGameGenesis === 'function') {
+                    startGameGenesis();
+                }
+            });
+
+            document.getElementById('pause-button').addEventListener('click', () => {
+                if (typeof stopGameGenesis === 'function') {
+                    stopGameGenesis();
+                }
+            });
+            
+            document.getElementById('upgrade-tower-damage').addEventListener('click', () => {
+                if (window.TDState && window.TDState.tower) {
+                    window.TDState.tower.upgrade('damage');
+                }
+            });
+
+            document.getElementById('upgrade-tower-range').addEventListener('click', () => {
+                if (window.TDState && window.TDState.tower) {
+                    window.TDState.tower.upgrade('range');
+                }
+            });
+            
+            document.getElementById('upgrade-castle-hp').addEventListener('click', () => {
+                if (window.TDState && window.TDState.castle) {
+                    window.TDState.castle.upgrade('hp');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
