@@ -592,18 +592,9 @@ function updateUI() {
         hpTextSpan = document.createElement('span');
         hpTextSpan.id = 'castle-hp-text-overlay';
         document.getElementById('castle-hp-bar-container').appendChild(hpTextSpan);
-        // Add style for the span (or just inherit from CSS)
-        hpTextSpan.style.position = 'absolute';
-        hpTextSpan.style.top = '50%';
-        hpTextSpan.style.left = '50%';
-        hpTextSpan.style.transform = 'translate(-50%, -50%)';
-        hpTextSpan.style.color = 'var(--text-light)';
-        hpTextSpan.style.fontSize = '14px';
-        hpTextSpan.style.fontWeight = 'bold';
-        hpTextSpan.style.textShadow = '0 0 3px rgba(0,0,0,0.8)';
-        hpTextSpan.style.zIndex = '1';
     }
-    hpTextSpan.textContent = `HP: ${Math.max(0, Math.floor(TDState.castle.hp))}/${TDState.castle.maxHp}`;
+    // The text format is also slightly cleaned up for better readability
+    hpTextSpan.textContent = `${Math.max(0, Math.floor(TDState.castle.hp))} / ${TDState.castle.maxHp}`;
     
     // Change HP bar color based on percentage (dynamic gradient)
     if (hpPct > 60) {
