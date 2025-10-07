@@ -117,16 +117,14 @@
             background: var(--panel-bg-dark); color: var(--text-dark);
             cursor: not-allowed; transform: none;
         }
-
-        /* --- CORRECTED: CANVAS OVERLAYS --- */
+        
         #canvas-overlay-container {
             position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-            z-index: 60; /* PATCH 1: Increased z-index to be ON TOP of the bottom UI panel */
+            z-index: 60; 
             display: flex; justify-content: center; align-items: center;
             pointer-events: none;
         }
         #call-wave-button {
-            /* PATCH 2: Removed absolute positioning. Will now be centered by the parent flex container. */
             pointer-events: auto;
             padding: 12px 24px; font-size: 18px;
             font-family: 'Bangers', cursive; letter-spacing: 1px;
@@ -149,7 +147,7 @@
             background-color: rgba(0,0,0,0.1);
         }
         canvas { display: block; width: 100%; height: 100%; }
-
+        
         #ability-bar {
             width: 100%; display: flex; justify-content: center;
             gap: 15px; margin-top: -15px; margin-bottom: 5px;
@@ -174,7 +172,8 @@
             width: calc(100% - 40px); margin-bottom: 20px; z-index: 50;
             background: linear-gradient(to top, var(--panel-bg-dark), var(--panel-bg-light), var(--panel-bg-dark));
             border: 2px solid var(--panel-border); border-radius: 18px; padding: 15px;
-            box-sizing: border-box; display: grid; grid-template-columns: repeat(2, 1fr);
+            box-sizing: border-box; display: grid; 
+            grid-template-columns: repeat(2, 1fr); /* Default to 2 columns */
             gap: 12px; box-shadow: 0 -8px 20px rgba(0,0,0,var(--shadow-intensity)), inset 0 0 15px rgba(255,255,255,0.05);
         }
         .upgrade-button {
@@ -202,6 +201,11 @@
             font-size: 15px; color: var(--accent-gold); font-weight: bold;
             margin-top: 5px; text-shadow: 0 0 5px rgba(255,235,59,0.5);
             font-family: 'Press Start 2P', cursive;
+        }
+        
+        /* NEW: Hide the castle upgrade button by default */
+        #upgrade-castle-hp {
+            display: none;
         }
 
         .modal-overlay {
@@ -288,6 +292,12 @@
                 <span class="stat-name">Critical Chance</span>
                 <span id="crit-value" class="stat-value">5%</span>
                 <span id="crit-cost" class="upgrade-cost">Cost: 120</span>
+            </div>
+            <!-- NEW: Castle HP Upgrade Button -->
+            <div id="upgrade-castle-hp" class="upgrade-button">
+                <span class="stat-name">Castle HP</span>
+                <span id="castleHp-value" class="stat-value">1000</span>
+                <span id="castleHp-cost" class="upgrade-cost">Cost: 1000</span>
             </div>
         </footer>
 
