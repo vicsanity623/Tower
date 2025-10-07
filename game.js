@@ -735,6 +735,7 @@ function openSkillsModal() {
 }
 function closeSkillsModal() {
     document.getElementById('skills-modal').style.display = 'none';
+    startGame(); // This will correctly resume the game loop
 }
 
 // ---------------------------- Save/Load System ----------------------------
