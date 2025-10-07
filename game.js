@@ -1,7 +1,7 @@
 /*
-    Vics Tower Defense - Revision 6 (Stability and Audio Patch)
-    - Fixed fatal TypeError in Hero constructor that caused the game to freeze on load.
-    - Made AudioManager more robust to gracefully handle missing audio files, cleaning up console errors.
+    Vics Tower Defense - Revision 7 (Wave Progression Patch)
+    - Fixed critical logic bug in WaveManager that prevented waves from progressing after Wave 1.
+    - Restructured WaveManager.update() to correctly separate spawning logic from wave completion checks.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -97,19 +97,16 @@ const joystick = {
 // ---------------------------- Meta Progression & Storage ----------------------------
 const MetaUpgrades = {
     upgrades: {
-        startingGold: { name: "Starting Gold", level: 0, maxLevel: 10, cost: 5, bonus: 10 }, // +10 gold per level
-        critChance: { name: "Crit Chance", level: 0, maxLevel: 10, cost: 8, bonus: 0.5 },  // +0.5% crit per level
-        upgradeDiscount: { name: "Upgrade Discount", level: 0, maxLevel: 10, cost: 10, bonus: 1 }, // -1% cost per level
+        startingGold: { name: "Starting Gold", level: 0, maxLevel: 10, cost: 5, bonus: 10 },
+        critChance: { name: "Crit Chance", level: 0, maxLevel: 10, cost: 8, bonus: 0.5 },
+        upgradeDiscount: { name: "Upgrade Discount", level: 0, maxLevel: 10, cost: 10, bonus: 1 },
     },
     gems: 0,
-
     getCost(stat) { return this.upgrades[stat].cost * (this.upgrades[stat].level + 1); },
     getBonus(stat) {
         const upgrade = this.upgrades[stat];
-        if (!upgrade) return 0; // Failsafe for non-existent upgrades
-        if (stat === 'upgradeDiscount') {
-            return 1 - (upgrade.level * upgrade.bonus) / 100;
-        }
+        if (!upgrade) return 0;
+        if (stat === 'upgradeDiscount') return 1 - (upgrade.level * upgrade.bonus) / 100;
         return upgrade.level * upgrade.bonus;
     },
     purchase(stat) {
@@ -147,7 +144,6 @@ const MetaUpgrades = {
 };
 
 // ---------------------------- Audio Manager ----------------------------
-// PATCH 2: Made AudioManager robust against missing audio files
 const AudioManager = {
     sounds: {},
     init(soundList) {
@@ -155,7 +151,7 @@ const AudioManager = {
             const audio = new Audio(`audio/${name}.mp3`);
             audio.isLoaded = false;
             audio.addEventListener('canplaythrough', () => audio.isLoaded = true, { once: true });
-            audio.addEventListener('error', () => console.warn(`Could not load sound: ${name}.mp3`));
+            audio.addEventListener('error', () => {}); // Silently fail if audio doesn't load
             this.sounds[name] = audio;
             this.sounds[name].volume = 0.5;
         });
@@ -164,11 +160,10 @@ const AudioManager = {
         const sound = this.sounds[name];
         if (sound && sound.isLoaded) {
             sound.currentTime = 0;
-            sound.play().catch(e => {}); // Catch is for user interaction policy
+            sound.play().catch(e => {});
         }
     }
 };
-
 
 // ---------------------------- Utility & Object Pools ----------------------------
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -206,8 +201,7 @@ particlePool.spawn = function(x, y, count, color) {
 // ---------------------------- Castle Class ----------------------------
 class Castle {
     constructor() {
-        this.hp = MAXS.CASTLE_HP;
-        this.maxHp = MAXS.CASTLE_HP;
+        this.hp = MAXS.CASTLE_HP; this.maxHp = MAXS.CASTLE_HP;
         this.y = canvasHeight;
     }
     takeDamage(amount) {
@@ -216,15 +210,14 @@ class Castle {
         AudioManager.play('castle_hit');
         floatingTextPool.get(`-${amount}`, canvasWidth / 2, this.y - 80, '#ef5350', 1200, 'bold 24px "Orbitron", sans-serif');
         if (this.hp <= 0) {
-            TDState.gameOver = true;
-            TDState.running = false;
+            TDState.gameOver = true; TDState.running = false;
             MetaUpgrades.gems += TDState.gemsEarned;
             MetaUpgrades.save();
             showGameOverScreen();
         }
         updateUI();
     }
-    draw(ctx) { /* Castle is now an abstract line at the bottom */ }
+    draw(ctx) {}
 }
 
 // ---------------------------- Enemy Definitions & Class ----------------------------
@@ -256,7 +249,7 @@ class Enemy {
     update(dt) {
         if (!this.active) return;
         if (this.hitFlash > 0) this.hitFlash -= dt * 1000;
-        if (now() < this.stunnedUntil) { return; }
+        if (now() < this.stunnedUntil) return;
         if (this.pathIndex >= gamePath.length) { this.reachEnd(); return; }
 
         const target = gamePath[this.pathIndex];
@@ -286,40 +279,33 @@ class Enemy {
     draw(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
-
         if (this.special === 'HEAL') {
             ctx.fillStyle = `rgba(0, 255, 0, ${0.1 + Math.sin(now()/200)*0.05})`;
             ctx.beginPath(); ctx.arc(0, 0, 60, 0, Math.PI * 2); ctx.fill();
         }
-
         ctx.fillStyle = this.color;
         ctx.beginPath(); ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2); ctx.fill();
-
         if (this.hitFlash > 0) {
             ctx.fillStyle = `rgba(255, 255, 255, ${this.hitFlash / 100})`;
             ctx.beginPath(); ctx.arc(0, 0, this.size / 2 + 2, 0, Math.PI * 2); ctx.fill();
         }
-
         ctx.fillStyle = 'white';
         ctx.beginPath(); ctx.arc(-this.size / 4, -this.size / 4, this.size / 8, 0, Math.PI * 2);
         ctx.arc(this.size / 4, -this.size / 4, this.size / 8, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'black';
         ctx.beginPath(); ctx.arc(-this.size / 4, -this.size / 4, this.size / 16, 0, Math.PI * 2);
         ctx.arc(this.size / 4, -this.size / 4, this.size / 16, 0, Math.PI * 2); ctx.fill();
-
         const hpPct = this.hp / this.maxHp;
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.fillRect(-this.size/2, -this.size/2 - 10, this.size, 4);
         const hpColor = hpPct > 0.6 ? '#4caf50' : hpPct > 0.3 ? '#ffeb3b' : '#ef5350';
         ctx.fillStyle = hpColor;
         ctx.fillRect(-this.size/2, -this.size/2 - 10, this.size * hpPct, 4);
-        
         if (now() < this.stunnedUntil) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.font = 'bold 12px Orbitron';
             ctx.fillText('Zzz', 0, this.size / 2 + 5);
         }
-
         ctx.restore();
     }
     takeDamage(dmg) {
@@ -327,10 +313,7 @@ class Enemy {
         this.hp -= dmg;
         this.hitFlash = 100;
         AudioManager.play('enemy_hit');
-        if (this.hp <= 0) {
-            this.die();
-            return true;
-        }
+        if (this.hp <= 0) { this.die(); return true; }
         return false;
     }
     die() {
@@ -340,22 +323,17 @@ class Enemy {
         particlePool.spawn(this.x, this.y, 20, this.color);
         AudioManager.play('enemy_die');
         floatingTextPool.get(`+${this.reward}`, this.x, this.y, '#ffeb3b');
-        
         if (this.special === 'SPLIT') {
             for (let i = 0; i < 2; i++) {
                 let e = TDState.enemies.find(en => !en.active);
                 if (!e) { e = new Enemy(); TDState.enemies.push(e); }
                 let childType = { ...EnemyTypes.NORMAL, size: 15, reward: 1 };
                 e.init(childType, 1);
-                e.x = this.x + (i * 20 - 10);
-                e.y = this.y;
+                e.x = this.x + (i * 20 - 10); e.y = this.y;
             }
         }
     }
-    reachEnd() {
-        this.active = false;
-        TDState.castle.takeDamage(10);
-    }
+    reachEnd() { this.active = false; TDState.castle.takeDamage(10); }
 }
 
 // ---------------------------- Projectile & Hero Classes ----------------------------
@@ -367,18 +345,11 @@ class Projectile {
         this.isCrit = isCrit;
     }
     update(dt) {
-        if (!this.active || !this.target.active || now() - this.spawnTime > 3000) {
-            this.active = false; return;
-        }
+        if (!this.active || !this.target.active || now() - this.spawnTime > 3000) { this.active = false; return; }
         const dx = this.target.x - this.x, dy = this.target.y - this.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < 10) {
-            this.target.takeDamage(this.damage);
-            this.active = false;
-        } else {
-            this.x += (dx / dist) * this.speed * dt;
-            this.y += (dy / dist) * this.speed * dt;
-        }
+        if (dist < 10) { this.target.takeDamage(this.damage); this.active = false; } 
+        else { this.x += (dx / dist) * this.speed * dt; this.y += (dy / dist) * this.speed * dt; }
     }
     draw(ctx) {
         ctx.save();
@@ -392,22 +363,15 @@ class Projectile {
 
 class Hero {
     constructor() {
-        this.x = canvasWidth / 2;
-        this.y = canvasHeight * 0.8;
-        this.speed = 150;
-        // PATCH 1: Correctly apply ONLY existing meta upgrades. This fixes the freeze.
-        this.damage = 25;
-        this.range = 180;
-        this.fireRate = 1.2;
-        this.crit = 5 + MetaUpgrades.getBonus('critChance');
+        this.x = canvasWidth / 2; this.y = canvasHeight * 0.8;
+        this.speed = 150; this.damage = 25; this.range = 180;
+        this.fireRate = 1.2; this.crit = 5 + MetaUpgrades.getBonus('critChance');
         this.lastShot = 0; this.muzzleFlash = 0;
     }
     update(dt) {
         if (joystick.active) {
-            this.x += joystick.vector.x * this.speed * dt;
-            this.y += joystick.vector.y * this.speed * dt;
-            this.x = clamp(this.x, 20, canvasWidth - 20);
-            this.y = clamp(this.y, 20, canvasHeight - 20);
+            this.x += joystick.vector.x * this.speed * dt; this.y += joystick.vector.y * this.speed * dt;
+            this.x = clamp(this.x, 20, canvasWidth - 20); this.y = clamp(this.y, 20, canvasHeight - 20);
         }
         const target = this.findTarget();
         this.shootAt(target);
@@ -425,15 +389,12 @@ class Hero {
     shootAt(target) {
         if (!target || now() - this.lastShot < 1000 / this.fireRate) return;
         this.lastShot = now(); this.muzzleFlash = 100;
-
         AudioManager.play('shoot');
         const isCrit = Math.random() * 100 < this.crit;
         const damage = this.damage * (isCrit ? 2.5 : 1.0);
-        
         let p = TDState.projectiles.find(pr => !pr.active) || new Projectile();
         if (!TDState.projectiles.includes(p)) TDState.projectiles.push(p);
         p.init(this.x, this.y, target, damage, isCrit);
-
         const color = isCrit ? '#ffeb3b' : '#e0e0ff';
         const font = isCrit ? 'bold 20px "Press Start 2P", cursive' : 'bold 16px "Orbitron", sans-serif';
         floatingTextPool.get(`-${Math.round(damage)}`, target.x, target.y - 10, color, 600, font);
@@ -457,18 +418,11 @@ class Hero {
         updateUI();
     }
     draw(ctx) {
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.fillStyle = "rgba(135, 153, 194, 0.08)";
-        ctx.strokeStyle = "rgba(135, 153, 194, 0.25)";
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(0, 0, this.range, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        
-        ctx.fillStyle = '#6a6ac2';
-        ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#e0e0ff';
-        ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill();
-        
+        ctx.save(); ctx.translate(this.x, this.y);
+        ctx.fillStyle = "rgba(135, 153, 194, 0.08)"; ctx.strokeStyle = "rgba(135, 153, 194, 0.25)";
+        ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, this.range, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#6a6ac2'; ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#e0e0ff'; ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill();
         if (this.muzzleFlash > 0) {
             ctx.fillStyle = `rgba(255, 235, 59, ${this.muzzleFlash/100})`;
             ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
@@ -500,21 +454,32 @@ const UpgradeManager = {
 class WaveManager {
     constructor() { this.reset(); }
     reset() {
-        this.wave = 0; this.spawning = false; this.enemiesToSpawn = 0;
-        this.spawned = 0; this.spawnTimer = 0; this.waveComposition = [];
+        this.wave = 0; this.spawning = false; this.spawnFinished = false;
+        this.enemiesToSpawn = 0; this.spawned = 0; this.spawnTimer = 0;
+        this.waveComposition = [];
     }
     startNextWave() {
         if (this.spawning) return;
         TDState.betweenWaves = false;
         document.getElementById('call-wave-button').style.display = 'none';
         generateNewPath();
-        this.wave++;
-        TDState.wave = this.wave;
+        this.wave++; TDState.wave = this.wave;
         this.generateWaveComposition();
         this.enemiesToSpawn = this.waveComposition.length;
-        this.spawned = 0; this.spawnTimer = 0; this.spawning = true;
+        this.spawned = 0; this.spawnTimer = 0; this.spawning = true; this.spawnFinished = false;
         AudioManager.play('wave_start');
         floatingTextPool.get(`Wave ${this.wave}`, canvasWidth / 2, canvasHeight * 0.4, '#e0e0ff', 2000, 'bold 32px "Bangers", cursive');
+        updateUI();
+    }
+    endWave() {
+        this.spawning = false;
+        TDState.betweenWaves = true;
+        const bonus = 15 * this.wave;
+        TDState.gold += bonus;
+        TDState.gemsEarned += 1 + Math.floor(this.wave / 5);
+        document.getElementById('call-wave-button').style.display = 'block';
+        AudioManager.play('wave_clear');
+        floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive');
         updateUI();
     }
     generateWaveComposition() {
@@ -528,29 +493,32 @@ class WaveManager {
         this.waveComposition.sort(() => Math.random() - 0.5);
     }
     update(dt) {
-        if (!this.spawning) return;
-        const interval = Math.max(100, TD_CONFIG.spawnInterval - this.wave * 10);
-        this.spawnTimer += dt * 1000;
-        if (this.spawnTimer > interval && this.spawned < this.enemiesToSpawn) {
-            this.spawnTimer = 0;
-            const enemyType = this.waveComposition[this.spawned];
-            this.spawned++;
-            let e = TDState.enemies.find(en => !en.active);
-            if (!e) { e = new Enemy(); TDState.enemies.push(e); }
-            const waveModifier = 1 + this.wave * 0.15;
-            e.init(enemyType, waveModifier);
+        // --- Spawning Logic ---
+        if (this.spawning) {
+            const interval = Math.max(100, TD_CONFIG.spawnInterval - this.wave * 10);
+            this.spawnTimer += dt * 1000;
+            if (this.spawnTimer > interval && this.spawned < this.enemiesToSpawn) {
+                this.spawnTimer = 0;
+                const enemyType = this.waveComposition[this.spawned];
+                this.spawned++;
+                let e = TDState.enemies.find(en => !en.active);
+                if (!e) { e = new Enemy(); TDState.enemies.push(e); }
+                const waveModifier = 1 + this.wave * 0.15;
+                e.init(enemyType, waveModifier);
+            }
+            if (this.spawned >= this.enemiesToSpawn) {
+                this.spawning = false; // Stop spawning for this wave
+                this.spawnFinished = true; // Mark that we are now just waiting for enemies to be cleared
+            }
         }
-        const activeEnemiesCount = TDState.enemies.filter(e => e.active).length;
-        if (this.spawned >= this.enemiesToSpawn && activeEnemiesCount === 0) {
-            this.spawning = false;
-            TDState.betweenWaves = true;
-            document.getElementById('call-wave-button').style.display = 'block';
-            const bonus = 15 * this.wave;
-            TDState.gold += bonus;
-            TDState.gemsEarned += 1 + Math.floor(this.wave / 5);
-            AudioManager.play('wave_clear');
-            floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive');
-            updateUI();
+        
+        // --- Wave Completion Logic ---
+        // This runs independently of the spawning logic
+        if (this.spawnFinished && !TDState.betweenWaves) {
+            const activeEnemiesCount = TDState.enemies.filter(e => e.active).length;
+            if (activeEnemiesCount === 0) {
+                this.endWave();
+            }
         }
     }
 }
@@ -578,7 +546,6 @@ function update(dt) {
     TDState.particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; });
     TDState.floatingTexts = TDState.floatingTexts.filter(ft => now() - ft.spawnTime < ft.ttl);
     TDState.floatingTexts.forEach(ft => { ft.y -= 30 * dt; });
-    
     if (TDState.screenShake.duration > 0) {
         TDState.screenShake.duration -= dt * 1000;
         TDState.screenShake.intensity *= 0.9;
@@ -603,7 +570,6 @@ function draw() {
         ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; ctx.lineWidth = 2;
         ctx.stroke();
     }
-    
     TDState.castle.draw(ctx);
     TDState.hero.draw(ctx);
     TDState.enemies.forEach(e => { if (e.active) e.draw(ctx); });
@@ -616,7 +582,6 @@ function draw() {
         ctx.font = ft.font; ctx.fillStyle = ft.color;
         ctx.textAlign = 'center'; ctx.fillText(ft.text, ft.x, ft.y);
     });
-    
     if (joystick.active) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(joystick.start.x, joystick.start.y, joystick.radius, 0, Math.PI * 2); ctx.stroke();
@@ -631,7 +596,6 @@ function updateUI() {
     document.getElementById('gold-display').textContent = `Gold: ${Math.floor(TDState.gold)}`;
     document.getElementById('wave-display').textContent = `Wave: ${TDState.wave}`;
     document.getElementById('kills-display').textContent = `Kills: ${TDState.enemiesKilled}`;
-
     const hero = TDState.hero;
     document.getElementById('damage-value').textContent = Math.round(hero.damage);
     document.getElementById('fireRate-value').textContent = `${hero.fireRate.toFixed(2)}/s`;
@@ -641,7 +605,6 @@ function updateUI() {
     document.getElementById('fireRate-cost').textContent = `Cost: ${UpgradeManager.getCost('fireRate')}`;
     document.getElementById('range-cost').textContent = `Cost: ${UpgradeManager.getCost('range')}`;
     document.getElementById('crit-cost').textContent = `Cost: ${UpgradeManager.getCost('crit')}`;
-
     const hpPct = (TDState.castle.hp / TDState.castle.maxHp) * 100;
     const castleHpBar = document.getElementById('castle-hp-bar');
     castleHpBar.style.width = `${hpPct}%`;
@@ -654,7 +617,6 @@ function updateUI() {
     if (hpPct > 60) castleHpBar.style.background = 'linear-gradient(to right, var(--accent-green), #90ee90)';
     else if (hpPct > 30) castleHpBar.style.background = 'linear-gradient(to right, #ffeb3b, #ffda4a)';
     else castleHpBar.style.background = 'linear-gradient(to right, var(--accent-red), #ff7f7f)';
-
     const empButton = document.getElementById('emp-blast-button');
     const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
     if (cooldownTime > 0) {
@@ -682,7 +644,6 @@ function initGame() {
     TDState.hero = new Hero();
     TDState.waveManager = new WaveManager();
     TDState.gold = 100 + MetaUpgrades.getBonus('startingGold');
-
     updateUI();
     draw();
 }
@@ -693,7 +654,7 @@ function startGame() {
     document.getElementById('start-button').style.display = 'none';
     document.getElementById('pause-button').style.display = 'block';
     TDState.lastTime = performance.now();
-    if(TDState.wave === 0) TDState.waveManager.startNextWave();
+    if (TDState.wave === 0) TDState.waveManager.startNextWave();
     gameLoop(TDState.lastTime);
 }
 
@@ -719,9 +680,7 @@ function useEmpBlast() {
     const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
     if (cooldownTime <= 0) {
         TDState.abilities.empBlast.lastUsed = now();
-        TDState.enemies.forEach(e => {
-            if (e.active) e.stunnedUntil = now() + 3000;
-        });
+        TDState.enemies.forEach(e => { if (e.active) e.stunnedUntil = now() + 3000; });
         TDState.screenShake = { intensity: 20, duration: 300 };
         AudioManager.play('emp_blast');
         particlePool.spawn(TDState.hero.x, TDState.hero.y, 100, '#82ccdd');
@@ -748,16 +707,13 @@ function handleJoystickMove(e) {
     const touch = e.changedTouches ? e.changedTouches[0] : e;
     const moveX = touch.clientX - rect.left;
     const moveY = touch.clientY - rect.top;
-
     const dx = moveX - joystick.start.x, dy = moveY - joystick.start.y;
     const dist = Math.hypot(dx, dy);
-
     if (dist < joystick.deadzone) {
         joystick.vector.x = 0; joystick.vector.y = 0;
         joystick.current.x = moveX; joystick.current.y = moveY;
         return;
     }
-    
     const angle = Math.atan2(dy, dx);
     const clampedDist = Math.min(dist, joystick.radius);
     joystick.current.x = joystick.start.x + Math.cos(angle) * clampedDist;
@@ -777,15 +733,13 @@ function handleJoystickEnd(e) {
 document.addEventListener('DOMContentLoaded', () => {
     AudioManager.init(['shoot', 'enemy_hit', 'enemy_die', 'castle_hit', 'wave_start', 'wave_clear', 'upgrade', 'error', 'emp_blast', 'ui_click']);
     initGame();
-    
     canvas.addEventListener('mousedown', handleJoystickStart);
     canvas.addEventListener('mousemove', handleJoystickMove);
-    window.addEventListener('mouseup', handleJoystickEnd); // Listen on window to catch mouseup outside canvas
+    window.addEventListener('mouseup', handleJoystickEnd);
     canvas.addEventListener('touchstart', handleJoystickStart, { passive: false });
     canvas.addEventListener('touchmove', handleJoystickMove, { passive: false });
     window.addEventListener('touchend', handleJoystickEnd);
     window.addEventListener('touchcancel', handleJoystickEnd);
-
     document.getElementById('start-button').addEventListener('click', startGame);
     document.getElementById('pause-button').addEventListener('click', pauseGame);
     document.getElementById('call-wave-button').addEventListener('click', callWaveEarly);
