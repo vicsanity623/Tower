@@ -4,29 +4,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <title>Vics Tower</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@400;700&family=Bangers&display=swap" rel="stylesheet">
     <style>
+        /* --- VARIABLES --- */
         :root {
-            --bg-color: #3d4b6b;
-            --panel-bg: #2c3a58;
-            --panel-border: #232d43;
-            --text-light: #ffffff;
-            --text-dark: #d0d8e8;
-            --accent-green: #63d68c;
-            --accent-red: #c75869;
-            --accent-gold: #ffc93c;
+            --bg-color: #2a2a4a; /* Darker, more sci-fi/fantasy background */
+            --panel-bg-dark: #1e1e3b; /* Dark panel background */
+            --panel-bg-light: #3a3a60; /* Lighter panel background for depth */
+            --panel-border: #4f4f8a; /* Stronger, glowing border */
+            --text-light: #e0e0ff; /* Light, slightly blue-tinted text */
+            --text-dark: #b0b0d0; /* Darker secondary text */
+            --accent-green: #4caf50; /* Vibrant green for HP/positive feedback */
+            --accent-red: #ef5350; /* Fiery red for danger/damage */
+            --accent-gold: #ffeb3b; /* Bright gold for currency/important info */
+            --button-hover: #5a5a9a; /* Button hover effect */
+            --button-active: #3f3f7a; /* Button active effect */
+            --shadow-intensity: 0.8; /* Control shadow darkness */
         }
 
+        /* --- GLOBAL STYLES --- */
         body, html {
             margin: 0;
             padding: 0;
             overflow: hidden;
             width: 100%;
             height: 100%;
-            background-color: var(--bg-color);
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            font-weight: bold;
+            background: linear-gradient(135deg, var(--bg-color) 0%, #1a1a3a 100%); /* Gradient background */
+            font-family: 'Orbitron', sans-serif; /* Modern, techy font */
             color: var(--text-light);
             user-select: none;
+            display: flex; /* Use flexbox for centering */
+            justify-content: center;
+            align-items: center;
         }
 
         #game-wrapper {
@@ -34,128 +43,223 @@
             height: 100%;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: space-between; /* Distribute space */
             align-items: center;
-            max-width: 450px;
-            margin: auto;
+            max-width: 450px; /* Constrain width for mobile-first design */
             position: relative;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.5); /* Overall game shadow */
+            background-color: rgba(0,0,0,0.2); /* Slight transparent overlay */
+            border-radius: 15px; /* Rounded corners for the entire game area */
+            overflow: hidden; /* Hide anything spilling out */
         }
 
-        /* Top UI elements */
+        /* --- TOP UI ELEMENTS --- */
         #top-ui-container {
-            position: absolute;
-            top: 20px;
-            left: 10px;
-            right: 10px;
+            width: calc(100% - 20px); /* Adjust for padding */
+            margin-top: 20px;
             z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
         
         #resource-bar {
             width: 100%;
-            padding: 8px 0;
+            padding: 10px 0;
             display: flex;
             justify-content: space-around;
-            background-color: rgba(0,0,0,0.3);
-            border-radius: 12px;
+            background: linear-gradient(to right, var(--panel-bg-dark), var(--panel-bg-light), var(--panel-bg-dark)); /* Gradient panel */
+            border: 2px solid var(--panel-border);
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,var(--shadow-intensity)), inset 0 0 10px rgba(255,255,255,0.1); /* Inner and outer shadow */
             box-sizing: border-box;
-            margin-bottom: 10px;
         }
         .resource-item {
             padding: 5px 15px;
-            font-size: 16px;
+            font-size: 17px;
+            color: var(--text-light);
+            text-shadow: 0 0 5px rgba(255,255,255,0.4); /* Glowing text */
+            font-weight: bold;
+            letter-spacing: 0.5px;
         }
+        #gold-display { color: var(--accent-gold); } /* Gold text color */
+        #wave-display { color: var(--text-light); }
+        #kills-display { color: var(--accent-green); } /* Kills in green */
 
         /* Castle HP Bar */
         #castle-hp-bar-container {
             width: 100%;
-            height: 20px;
-            background-color: var(--panel-border);
-            border-radius: 10px;
-            border: 2px solid rgba(0,0,0,0.2);
+            height: 25px; /* Taller HP bar */
+            background-color: var(--panel-bg-dark);
+            border-radius: 12px;
+            border: 2px solid var(--panel-border);
             overflow: hidden;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.6), 0 2px 5px rgba(0,0,0,0.4);
+            position: relative;
         }
         #castle-hp-bar {
-            width: 100%;
             height: 100%;
-            background-color: var(--accent-green);
-            transition: width 0.3s ease-out;
+            background: linear-gradient(to right, var(--accent-green), #90ee90); /* Gradient HP bar */
+            transition: width 0.3s ease-out, background-color 0.3s ease-out; /* Smooth transitions */
+            border-radius: 10px;
+            position: relative;
+            box-shadow: inset 0 0 8px rgba(255,255,255,0.3);
+        }
+        /* Optional: Add text overlay for HP percentage */
+        #castle-hp-bar-container::after {
+            content: 'HP: 100%'; /* Placeholder, update with JS */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--text-light);
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 0 0 3px rgba(0,0,0,0.8);
+            z-index: 1;
         }
 
-        /* Main Game Canvas */
+
+        /* --- GAME CONTROLS --- */
+        #game-controls {
+            position: absolute;
+            top: 80px; /* Adjust position */
+            right: 15px;
+            display: flex;
+            gap: 8px; /* Smaller gap */
+            z-index: 10;
+        }
+        .control-button {
+            padding: 10px 18px; /* More generous padding */
+            font-size: 15px;
+            color: var(--text-light);
+            border: none; /* No default border */
+            border-radius: 10px;
+            cursor: pointer;
+            background: linear-gradient(to bottom, var(--panel-bg-light), var(--panel-bg-dark)); /* Gradient button */
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5), inset 0 1px 3px rgba(255,255,255,0.2);
+            transition: all 0.2s ease;
+            font-family: 'Orbitron', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .control-button:hover {
+            background: linear-gradient(to bottom, var(--button-hover), var(--panel-bg-light));
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.6), inset 0 1px 3px rgba(255,255,255,0.3);
+        }
+        .control-button:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4), inset 0 1px 3px rgba(0,0,0,0.3);
+            background: var(--button-active);
+        }
+
+        /* --- MAIN GAME CANVAS --- */
         #game-container {
             width: 100%;
             flex-grow: 1;
             position: relative;
+            background-color: rgba(0,0,0,0.1); /* Slightly transparent for depth */
+            border-radius: 0 0 15px 15px; /* Rounded only at bottom if game takes full height */
+            margin-top: 10px;
         }
         canvas {
             display: block;
             width: 100%;
             height: 100%;
+            /* Optional: Add a subtle border or glow around the canvas */
+            border-bottom-left-radius: 15px;
+            border-bottom-right-radius: 15px;
         }
 
-        /* Game Controls (Start/Pause) */
-        #game-controls {
-            position: absolute;
-            top: 75px;
-            right: 10px;
-            display: flex;
-            gap: 10px;
-            z-index: 10;
-        }
-        .control-button {
-            padding: 8px 15px;
-            font-size: 14px;
-            color: white;
-            border: 1px solid #000;
-            border-radius: 8px;
-            cursor: pointer;
-            background-color: rgba(0,0,0,0.4);
-        }
-
-        /* Bottom UI Panel */
+        /* --- BOTTOM UI PANEL --- */
         #ui-panel {
-            width: 95%;
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: var(--panel-bg);
+            width: calc(100% - 40px); /* Adjust for wrapper padding */
+            margin-bottom: 20px;
+            background: linear-gradient(to top, var(--panel-bg-dark), var(--panel-bg-light), var(--panel-bg-dark)); /* Gradient background */
             border: 2px solid var(--panel-border);
-            border-radius: 12px;
-            padding: 12px;
+            border-radius: 18px; /* More rounded corners */
+            padding: 15px; /* Increased padding */
             box-sizing: border-box;
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            grid-template-columns: repeat(2, 1fr); /* 2 columns */
+            gap: 12px; /* Increased gap */
+            box-shadow: 0 -8px 20px rgba(0,0,0,var(--shadow-intensity)), inset 0 0 15px rgba(255,255,255,0.05);
+            margin-top: 15px; /* Space from canvas */
         }
         .upgrade-button {
-            background-color: var(--panel-border);
-            border: 1px solid rgba(0,0,0,0.3);
-            border-radius: 8px;
-            padding: 10px;
+            background: linear-gradient(to bottom, var(--panel-bg-light), var(--panel-bg-dark));
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 12px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4), inset 0 1px 3px rgba(255,255,255,0.1);
+        }
+        .upgrade-button:hover {
+            background: linear-gradient(to bottom, var(--button-hover), var(--panel-bg-light));
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.6), inset 0 1px 3px rgba(255,255,255,0.3);
+            border-color: var(--accent-gold); /* Highlight border on hover */
         }
         .upgrade-button:active {
-            transform: scale(0.97);
+            transform: translateY(0);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3), inset 0 1px 3px rgba(0,0,0,0.2);
+            background: var(--button-active);
         }
         .stat-name {
             font-size: 14px;
             color: var(--text-dark);
+            margin-bottom: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Orbitron', sans-serif;
         }
         .stat-value {
-            font-size: 18px;
+            font-size: 20px;
             margin: 4px 0;
+            color: var(--text-light);
+            text-shadow: 0 0 8px rgba(255,255,255,0.6);
+            font-weight: bold;
+            font-family: 'Bangers', cursive; /* More impactful font for values */
         }
         .upgrade-cost {
-            font-size: 14px;
+            font-size: 15px;
             color: var(--accent-gold);
-            font-weight: normal;
+            font-weight: bold;
+            margin-top: 5px;
+            text-shadow: 0 0 5px rgba(255,235,59,0.5);
+            font-family: 'Press Start 2P', cursive; /* Retro arcade font for cost */
         }
+
+        /* --- FONT AWESOME ICONS (Optional, but recommended for visual cues) --- */
+        /* Link to Font Awesome in head for actual icons */
+        /*
+        .resource-item::before {
+            font-family: 'Font Awesome 5 Free';
+            font-weight: 900;
+            margin-right: 5px;
+        }
+        #gold-display::before { content: '\f53a'; } // coin icon
+        #wave-display::before { content: '\f0a1'; } // bell icon
+        #kills-display::before { content: '\f061'; } // arrow up icon (for progress)
+
+        .upgrade-button::before {
+            font-family: 'Font Awesome 5 Free';
+            font-weight: 900;
+            font-size: 24px;
+            margin-bottom: 8px;
+            color: var(--accent-gold);
+        }
+        #upgrade-damage::before { content: '\f085'; } // wrench icon
+        #upgrade-fireRate::before { content: '\f135'; } // hourglass icon
+        #upgrade-range::before { content: '\f05b'; } // crosshairs icon
+        #upgrade-crit::before { content: '\f2dc'; } // star icon
+        */
 
     </style>
 </head>
@@ -170,7 +274,7 @@
                 <div id="kills-display" class="resource-item">Kills: 0</div>
             </header>
             <div id="castle-hp-bar-container">
-                <div id="castle-hp-bar"></div>
+                <div id="castle-hp-bar" style="width: 100%;"></div> <!-- Initial width for JS -->
             </div>
         </div>
         
@@ -208,6 +312,7 @@
 
     </div>
 
+    <!-- Your game.js script (ensure it correctly targets updated element IDs/structure) -->
     <script src="game.js"></script>
 </body>
 </html>
