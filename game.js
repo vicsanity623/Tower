@@ -1,8 +1,7 @@
 /*
-    Vics Tower Defense - Revision 13 (Projectile & Layout Patch)
-    - Fixed projectile bug where projectiles would fly erratically if their target died mid-flight.
-      Projectiles now use a fire-and-forget directional vector.
-    - Finalized UI layout adjustments via CSS, removing now-redundant JS.
+    Vics Tower Defense - Revision 14 (Critical Bugfix)
+    - Fixed a ReferenceError that prevented waves from generating by re-inserting the missing EnemyTypes constant.
+    - Game progression beyond wave 1 is now restored.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -14,12 +13,18 @@ const TD_CONFIG = {
 };
 
 const MAXS = {
-    HERO_DAMAGE: 10000, HERO_RANGE: 500, HERO_FIRE_RATE: 20,
-    CRIT_CHANCE: 90, CASTLE_HP: 10000, HERO_SPEED: 250,
+    HERO_DAMAGE: 10000,
+    HERO_RANGE: 500,
+    HERO_FIRE_RATE: 20,
+    CRIT_CHANCE: 90,
+    CASTLE_HP: 10000,
+    HERO_SPEED: 250,
 };
 
 const UPGRADE_COST_MULT = 1.18;
-const ABILITY_COOLDOWNS = { empBlast: 45000 };
+const ABILITY_COOLDOWNS = {
+    empBlast: 45000
+};
 
 // ---------------------------- Canvas & Context Setup ----------------------------
 let canvas = null, ctx = null, canvasWidth = 0, canvasHeight = 0;
@@ -28,11 +33,14 @@ function setupCanvas() {
     ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
-    canvasWidth = rect.width; canvasHeight = rect.height;
+    canvasWidth = rect.width;
+    canvasHeight = rect.height;
     ctx.font = 'bold 16px "Orbitron", sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 }
 
 // ---------------------------- Game Path Generation ----------------------------
@@ -216,8 +224,15 @@ class Castle {
     draw(ctx) {}
 }
 
-// ---------------------------- Enemy Class ----------------------------
-// ... (This class is unchanged from the previous version)
+// ---------------------------- Enemy Definitions & Class (FIXED) ----------------------------
+const EnemyTypes = {
+    NORMAL: { hp: 30, speed: 40, reward: 5, size: 20, color: '#ff6b6b' },
+    TANK: { hp: 100, speed: 25, reward: 10, size: 30, color: '#4834d4' },
+    RUNNER: { hp: 15, speed: 80, reward: 3, size: 15, color: '#1dd1a1' },
+    HEALER: { hp: 40, speed: 30, reward: 15, size: 22, color: '#feca57', special: 'HEAL' },
+    SPLITTER: { hp: 50, speed: 35, reward: 8, size: 28, color: '#ff9ff3', special: 'SPLIT' }
+};
+
 class Enemy {
     constructor() { this.reset(); }
     reset() {
@@ -289,13 +304,13 @@ class Enemy {
     reachEnd() { this.active = false; TDState.castle.takeDamage(10); }
 }
 
-// ---------------------------- Projectile Class (PATCHED) ----------------------------
+// ---------------------------- Projectile Class ----------------------------
 class Projectile {
     constructor() { this.active = false; }
     init(x, y, direction, damage, isCrit = false) {
         this.active = true;
         this.x = x; this.y = y;
-        this.direction = direction; // Store the calculated direction vector
+        this.direction = direction;
         this.damage = damage;
         this.isCrit = isCrit;
         this.spawnTime = now();
@@ -304,13 +319,9 @@ class Projectile {
     }
     update(dt) {
         if (!this.active || now() - this.spawnTime > 3000) { this.active = false; return; }
-
         const projectileSpeed = 500 + (SkillManager.getSkillLevel('legolas') * 50);
-        // Move in the fixed direction
         this.x += this.direction.x * projectileSpeed * dt;
         this.y += this.direction.y * projectileSpeed * dt;
-
-        // Collision detection remains the same
         for (const e of TDState.enemies) {
             if (this.active && e.active && !this.hitEnemies.includes(e) && Math.hypot(this.x - e.x, this.y - e.y) < e.size / 2) {
                 e.takeDamage(this.damage);
@@ -318,12 +329,10 @@ class Projectile {
                 this.hitEnemies.push(e);
                 if (this.pierceLeft < 0) {
                     this.active = false;
-                    break; // Stop checking once projectile is used up
+                    break;
                 }
             }
         }
-
-        // Despawn if it goes way off-screen
         if (this.x < -50 || this.x > canvasWidth + 50 || this.y < -50 || this.y > canvasHeight + 50) {
             this.active = false;
         }
@@ -335,7 +344,6 @@ class Projectile {
         ctx.restore();
     }
 }
-
 
 // ---------------------------- Hero and Follower Classes ----------------------------
 class Hero {
@@ -455,7 +463,7 @@ class Follower {
     }
 }
 
-// ---------------------------- Global Projectile Function (PATCHED) ----------------------------
+// ---------------------------- Global Projectile Function ----------------------------
 function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) {
     if (!isRapidFire) AudioManager.play('shoot');
     const isCrit = Math.random() * 100 < critChance;
@@ -465,16 +473,14 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
         let p = TDState.projectiles.find(pr => !pr.active);
         if (!p) { p = new Projectile(); TDState.projectiles.push(p); }
         
-        const dirX = target.x - x;
-        const dirY = target.y - y;
-        const originalAngle = Math.atan2(dirY, dirX);
+        const dirX_base = target.x - x;
+        const dirY_base = target.y - y;
+        const baseAngle = Math.atan2(dirY_base, dirX_base);
+
         const angleOffset = (i > 0) ? (i % 2 === 0 ? -1 : 1) * Math.ceil(i/2) * 15 * (Math.PI / 180) : 0;
-        const finalAngle = originalAngle + angleOffset;
+        const finalAngle = baseAngle + angleOffset;
         
-        const direction = {
-            x: Math.cos(finalAngle),
-            y: Math.sin(finalAngle)
-        };
+        const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
         
         p.init(x, y, direction, finalDamage, isCrit);
     }
@@ -484,9 +490,6 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
         floatingTextPool.get(`-${Math.round(finalDamage)}`, target.x, target.y - 10, color, 600, font);
     }
 }
-
-
-// ... (The rest of the file is identical to the previous full version)
 
 // ---------------------------- Upgrade Manager ----------------------------
 const UpgradeManager = {
@@ -680,7 +683,7 @@ function renderSkillTree() {
             if (level >= skill.maxLevel) node.classList.add('maxed');
             node.innerHTML = `
                 <div class="skill-name">${skill.name}</div>
-                <div class.skill-level">Lv ${level}/${skill.maxLevel}</div>
+                <div class="skill-level">Lv ${level}/${skill.maxLevel}</div>
                 <div class="skill-cost">Cost: ${SkillManager.getSkillCost(skill.id)}</div>
             `;
             if (isUnlocked && level < skill.maxLevel) {
@@ -698,7 +701,7 @@ function openSkillsModal() {
 }
 function closeSkillsModal() {
     document.getElementById('skills-modal').style.display = 'none';
-    if (!TDState.gameOver) startGame(); // Automatically resume the game
+    if (!TDState.gameOver && !TDState.betweenWaves) startGame();
 }
 
 // ---------------------------- Save/Load System ----------------------------
