@@ -3,7 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>Vics Tower</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#2a2a4a"/>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/player-192x192.PNG">
+
+    <title>Vics Tower Defense</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@400;700&family=Bangers&display=swap" rel="stylesheet">
     <style>
         /* --- VARIABLES --- */
@@ -314,5 +320,20 @@
 
     <!-- Your game.js script (ensure it correctly targets updated element IDs/structure) -->
     <script src="game.js"></script>
+
+    <!-- PWA Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+    </script>
 </body>
 </html>
