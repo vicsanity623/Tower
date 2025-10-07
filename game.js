@@ -22,7 +22,7 @@ const MAXS = {
     HERO_FIRE_RATE: 20,
     CRIT_CHANCE: 90,
     CASTLE_HP: 10000,
-    HERO_SPEED: 250, // Increased base speed cap for GodSpeed
+    HERO_SPEED: 250,
 };
 
 const UPGRADE_COST_MULT = 1.18;
@@ -218,11 +218,10 @@ const SkillManager = {
         const skill = SkillTree[id];
         const level = this.getSkillLevel(id);
         const cost = this.getSkillCost(id);
-
         if (TDState.gold >= cost && level < skill.maxLevel) {
             TDState.gold -= cost;
             this.levels[id]++;
-            this.applySkillEffects(id, 1); // Apply one level's worth of effect
+            this.applySkillEffects(id, 1);
             AudioManager.play('upgrade');
             renderSkillTree();
             return true;
@@ -232,7 +231,7 @@ const SkillManager = {
     },
     applySkillEffects(id, levels) {
         if (id === 'legolas') TDState.hero.fireRate += 0.5 * levels;
-        if (id === 'godSpeed') TDState.hero.speed = Math.min(MAXS.HERO_SPEED, TDState.hero.speed + (20 * levels));
+        if (id === 'godSpeed') TDState.hero.speed = Math.min(MAXS.HERO_SPEED, TDState.hero.speed + (10 * levels));
         if (id === 'follower' && !TDState.follower) TDState.follower = new Follower(TDState.hero);
     },
     applyAllLoadedEffects() {
@@ -242,6 +241,7 @@ const SkillManager = {
         });
     }
 };
+
 
 // ---------------------------- Castle Class ----------------------------
 class Castle {
@@ -259,7 +259,7 @@ class Castle {
     recoverHp(percentage) {
         const recoveryAmount = Math.floor(this.maxHp * percentage);
         this.hp = Math.min(this.maxHp, this.hp + recoveryAmount);
-        floatingTextPool.get(`+${recoveryAmount} HP`, canvasWidth / 2, canvasHeight - 120, '#4caf50', 2500, 'bold 28px "Bangers", cursive');
+        floatingTextPool.get(`+${recoveryAmount} HP`, canvasWidth / 2, canvasHeight / 2, '#4caf50', 2500, 'bold 28px "Bangers", cursive');
         updateUI();
     }
     draw(ctx) {}
@@ -370,7 +370,7 @@ class Projectile {
                 if (this.pierceLeft < 0) this.active = false;
             }
         });
-        if (dist > 2000) this.active = false; // Despawn if target is way off-screen
+        if (dist > 2000) this.active = false;
     }
     draw(ctx) {
         ctx.save(); const baseColor = this.isCrit ? '#ffeb3b' : '#e0e0ff';
@@ -468,6 +468,36 @@ class Hero {
     }
 }
 
+class Follower {
+    constructor(leader) {
+        this.leader = leader; this.x = leader.x - 50; this.y = leader.y;
+        this.range = 150; this.lastShot = 0;
+    }
+    update(dt) {
+        this.x += ((this.leader.x - 50) - this.x) * 0.1;
+        this.y += (this.leader.y - this.y) * 0.1;
+        const target = this.findTarget();
+        this.shootAt(target);
+    }
+    findTarget() {
+        let best = null, bestDist = Infinity;
+        for(const e of TDState.enemies) {
+            if (!e.active) continue;
+            const d = Math.hypot(e.x - this.x, e.y - this.y);
+            if (d <= this.range && d < bestDist) { best = e; bestDist = d; }
+        }
+        return best;
+    }
+    shootAt(target) {
+        if (!target || now() - this.lastShot < 1000 / this.leader.fireRate) return;
+        this.lastShot = now();
+        shootProjectile(this.x, this.y, target, this.leader.damage * 0.5, this.leader.crit);
+    }
+    draw(ctx) {
+        ctx.fillStyle = '#a29bfe'; ctx.beginPath(); ctx.arc(this.x, this.y, 15, 0, Math.PI * 2); ctx.fill();
+    }
+}
+
 // ---------------------------- Global Projectile Function ----------------------------
 function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) {
     if(!isRapidFire) AudioManager.play('shoot');
@@ -493,37 +523,221 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
     }
 }
 
-// ... (Upgrade Manager, Wave Manager, Game Loop, update, draw, etc. are largely unchanged)
-// ... (Only the functions that need modification are shown below for clarity)
+// ---------------------------- Upgrade Manager ----------------------------
+const UpgradeManager = {
+    costs: { damage: 50, range: 60, fireRate: 80, crit: 120, castleHp: 1000 },
+    levels: { damage: 0, range: 0, fireRate: 0, crit: 0, castleHp: 0 },
+    baseCosts: {},
+    init() {
+        this.baseCosts = { ...this.costs };
+        this.levels = { damage: 0, range: 0, fireRate: 0, crit: 0, castleHp: 0 };
+    },
+    getCost(stat) {
+        const lvl = this.levels[stat]; const base = this.baseCosts[stat];
+        const discount = MetaUpgrades.getBonus('upgradeDiscount');
+        return Math.ceil(base * Math.pow(UPGRADE_COST_MULT, lvl) * discount);
+    },
+    canAffordUpgrade(stat) { return TDState.gold >= this.getCost(stat); },
+    payForUpgrade(stat) { TDState.gold -= this.getCost(stat); this.levels[stat]++; }
+};
 
-// ---------------------------- UI, Game Control, Save/Load, Listeners ----------------------------
-// All subsequent functions from the previous final file go here, with the following modifications:
-
-// --- MODIFICATION to initGame ---
-function initGame() {
-    setupCanvas(); MetaUpgrades.load(); TDState.castle = new Castle();
-    TDState.hero = new Hero(); TDState.waveManager = new WaveManager(); 
-    UpgradeManager.init(); SkillManager.init(); // Initialize SkillManager
-    if (loadGame()) {
-        document.getElementById('start-button').textContent = "Resume";
+// ---------------------------- Wave Manager ----------------------------
+class WaveManager {
+    constructor() { this.reset(); }
+    reset() {
+        this.wave = 0; this.spawning = false; this.spawnFinished = false; this.enemiesToSpawn = 0;
+        this.spawned = 0; this.spawnTimer = 0; this.waveComposition = [];
+    }
+    startNextWave() {
+        if (this.spawning) return;
+        TDState.betweenWaves = false; document.getElementById('call-wave-button').style.display = 'none';
+        generateNewPath(); this.wave++; TDState.wave = this.wave; this.generateWaveComposition();
+        this.enemiesToSpawn = this.waveComposition.length; this.spawned = 0; this.spawnTimer = 0;
+        this.spawning = true; this.spawnFinished = false; AudioManager.play('wave_start');
+        floatingTextPool.get(`Wave ${this.wave}`, canvasWidth / 2, canvasHeight * 0.4, '#e0e0ff', 2000, 'bold 32px "Bangers", cursive');
+        updateUI();
+    }
+    endWave() {
+        this.spawning = false; TDState.betweenWaves = true;
+        const bonus = 15 * this.wave; TDState.gold += bonus;
+        TDState.gemsEarned += 1 + Math.floor(this.wave / 5);
+        if (this.wave > 0 && this.wave % 5 === 0) { TDState.castle.recoverHp(0.15); }
         document.getElementById('call-wave-button').style.display = 'block';
-        SkillManager.applyAllLoadedEffects(); // Apply effects from loaded skills
-    } else { TDState.gold = 100 + MetaUpgrades.getBonus('startingGold'); }
-    updateUI(); draw();
+        AudioManager.play('wave_clear');
+        floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive');
+        saveGame(); updateUI();
+    }
+    generateWaveComposition() {
+        this.waveComposition = []; const baseCount = 8 + this.wave * 2;
+        for (let i = 0; i < baseCount; i++) this.waveComposition.push(EnemyTypes.NORMAL);
+        if (this.wave > 1) for (let i = 0; i < this.wave; i++) this.waveComposition.push(EnemyTypes.RUNNER);
+        if (this.wave > 3) for (let i = 0; i < Math.floor(this.wave / 2); i++) this.waveComposition.push(EnemyTypes.TANK);
+        if (this.wave > 5) for (let i = 0; i < Math.floor(this.wave / 3); i++) this.waveComposition.push(EnemyTypes.SPLITTER);
+        if (this.wave > 7) for (let i = 0; i < Math.floor(this.wave / 4); i++) this.waveComposition.push(EnemyTypes.HEALER);
+        this.waveComposition.sort(() => Math.random() - 0.5);
+    }
+    update(dt) {
+        if (this.spawning) {
+            const interval = Math.max(100, TD_CONFIG.spawnInterval - this.wave * 10); this.spawnTimer += dt * 1000;
+            if (this.spawnTimer > interval && this.spawned < this.enemiesToSpawn) {
+                this.spawnTimer = 0; const enemyType = this.waveComposition[this.spawned]; this.spawned++;
+                let e = TDState.enemies.find(en => !en.active); if (!e) { e = new Enemy(); TDState.enemies.push(e); }
+                const waveModifier = 1 + this.wave * 0.15; e.init(enemyType, waveModifier);
+            }
+            if (this.spawned >= this.enemiesToSpawn) { this.spawning = false; this.spawnFinished = true; }
+        }
+        if (this.spawnFinished && !TDState.betweenWaves) {
+            const activeEnemiesCount = TDState.enemies.filter(e => e.active).length;
+            if (activeEnemiesCount === 0) { this.endWave(); }
+        }
+    }
 }
 
-// --- MODIFICATION to pauseGame ---
-function pauseGame() {
+// ---------------------------- Main Game Loop ----------------------------
+let animationFrameId = null;
+function gameLoop(timestamp) {
     if (!TDState.running) return;
-    TDState.running = false;
-    document.getElementById('start-button').textContent = "Resume";
-    document.getElementById('start-button').style.display = 'block';
-    document.getElementById('pause-button').style.display = 'none';
-    saveGame();
-    cancelAnimationFrame(animationFrameId);
+    const dt = clamp((timestamp - TDState.lastTime) / 1000, 0.01, 0.1);
+    TDState.lastTime = timestamp; update(dt); draw();
+    animationFrameId = requestAnimationFrame(gameLoop);
+}
+function update(dt) {
+    if (TDState.gameOver) return;
+    TDState.waveManager.update(dt); TDState.hero.update(dt);
+    if (TDState.follower) TDState.follower.update(dt);
+    TDState.enemies.forEach(e => e.update(dt));
+    TDState.projectiles = TDState.projectiles.filter(p => p.active); TDState.projectiles.forEach(p => p.update(dt));
+    TDState.particles = TDState.particles.filter(p => now() - p.spawnTime < p.ttl);
+    TDState.particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; });
+    TDState.floatingTexts = TDState.floatingTexts.filter(ft => now() - ft.spawnTime < ft.ttl);
+    TDState.floatingTexts.forEach(ft => { ft.y -= 30 * dt; });
+    if (TDState.screenShake.duration > 0) {
+        TDState.screenShake.duration -= dt * 1000; TDState.screenShake.intensity *= 0.9;
+    } else { TDState.screenShake.intensity = 0; }
+    updateUI();
+}
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save();
+    if (TDState.screenShake.intensity > 0) {
+        const sx = (Math.random() - 0.5) * TDState.screenShake.intensity;
+        const sy = (Math.random() - 0.5) * TDState.screenShake.intensity;
+        ctx.translate(sx, sy);
+    }
+    if (gamePath.length > 0) {
+        ctx.strokeStyle = "rgba(79, 79, 138, 0.4)"; ctx.lineWidth = 50;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(gamePath[0].x, gamePath[0].y);
+        for (let i = 1; i < gamePath.length; i++) ctx.lineTo(gamePath[i].x, gamePath[i].y);
+        ctx.stroke(); ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; ctx.lineWidth = 2; ctx.stroke();
+    }
+    TDState.castle.draw(ctx); TDState.hero.draw(ctx);
+    if (TDState.follower) TDState.follower.draw(ctx);
+    TDState.enemies.forEach(e => { if (e.active) e.draw(ctx); });
+    TDState.projectiles.forEach(p => p.draw(ctx));
+    TDState.particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
+    TDState.floatingTexts.forEach(ft => {
+        ctx.font = ft.font; ctx.fillStyle = ft.color; ctx.textAlign = 'center'; ctx.fillText(ft.text, ft.x, ft.y);
+    });
+    if (joystick.active) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(joystick.start.x, joystick.start.y, joystick.radius, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath(); ctx.arc(joystick.current.x, joystick.current.y, joystick.radius / 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
 }
 
-// --- MODIFICATIONS to saveGame/loadGame ---
+// ---------------------------- UI Integration ----------------------------
+function updateUI() {
+    document.getElementById('gold-display').textContent = `Gold: ${Math.floor(TDState.gold)}`;
+    document.getElementById('wave-display').textContent = `Wave: ${TDState.wave}`;
+    document.getElementById('kills-display').textContent = `Kills: ${TDState.enemiesKilled}`;
+    const hero = TDState.hero;
+    document.getElementById('damage-value').textContent = Math.round(hero.damage);
+    document.getElementById('fireRate-value').textContent = `${hero.fireRate.toFixed(2)}/s`;
+    document.getElementById('range-value').textContent = Math.round(hero.range);
+    document.getElementById('crit-value').textContent = `${hero.crit.toFixed(0)}%`;
+    document.getElementById('damage-cost').textContent = `Cost: ${UpgradeManager.getCost('damage')}`;
+    document.getElementById('fireRate-cost').textContent = `Cost: ${UpgradeManager.getCost('fireRate')}`;
+    document.getElementById('range-cost').textContent = `Cost: ${UpgradeManager.getCost('range')}`;
+    document.getElementById('crit-cost').textContent = `Cost: ${UpgradeManager.getCost('crit')}`;
+    const hpPct = (TDState.castle.hp / TDState.castle.maxHp) * 100;
+    const castleHpBar = document.getElementById('castle-hp-bar');
+    castleHpBar.style.width = `${hpPct}%`;
+    let hpTextSpan = document.getElementById('castle-hp-text-overlay');
+    if (!hpTextSpan) {
+        hpTextSpan = document.createElement('span'); hpTextSpan.id = 'castle-hp-text-overlay';
+        document.getElementById('castle-hp-bar-container').appendChild(hpTextSpan);
+    }
+    hpTextSpan.textContent = `${Math.max(0, Math.floor(TDState.castle.hp))} / ${TDState.castle.maxHp}`;
+    if (hpPct > 60) castleHpBar.style.background = 'linear-gradient(to right, var(--accent-green), #90ee90)';
+    else if (hpPct > 30) castleHpBar.style.background = 'linear-gradient(to right, #ffeb3b, #ffda4a)';
+    else castleHpBar.style.background = 'linear-gradient(to right, var(--accent-red), #ff7f7f)';
+    const empButton = document.getElementById('emp-blast-button');
+    const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
+    if (cooldownTime > 0) {
+        empButton.disabled = true; empButton.textContent = `${(cooldownTime / 1000).toFixed(1)}s`;
+    } else {
+        empButton.disabled = false; empButton.textContent = 'EMP';
+    }
+    const castleUpgradeButton = document.getElementById('upgrade-castle-hp');
+    if (TDState.wave >= 25) {
+        castleUpgradeButton.style.display = 'flex';
+        document.getElementById('castleHp-value').textContent = TDState.castle.maxHp;
+        document.getElementById('castleHp-cost').textContent = `Cost: ${UpgradeManager.getCost('castleHp')}`;
+    } else {
+        castleUpgradeButton.style.display = 'none';
+    }
+}
+function showGameOverScreen() {
+    document.getElementById('game-over-screen').style.display = 'flex';
+    document.getElementById('final-wave-stat').textContent = `Wave Reached: ${TDState.wave}`;
+    document.getElementById('final-kills-stat').textContent = `Slimes Defeated: ${TDState.enemiesKilled}`;
+    document.getElementById('gems-earned-stat').textContent = `Gems Earned: ${TDState.gemsEarned}`;
+}
+
+// ---------------------------- Skill Tree UI Functions ----------------------------
+function renderSkillTree() {
+    const container = document.getElementById('skill-tree-container');
+    container.innerHTML = '';
+    const tiers = {};
+    Object.values(SkillTree).forEach(skill => {
+        if (!tiers[skill.unlockWave]) tiers[skill.unlockWave] = [];
+        tiers[skill.unlockWave].push(skill);
+    });
+    Object.keys(tiers).sort((a,b) => a - b).forEach(wave => {
+        const tierDiv = document.createElement('div');
+        tierDiv.className = 'skill-tier';
+        tiers[wave].forEach(skill => {
+            const level = SkillManager.getSkillLevel(skill.id);
+            const isUnlocked = TDState.wave >= skill.unlockWave && (!skill.requires || SkillManager.getSkillLevel(skill.requires) > 0);
+            const node = document.createElement('div');
+            node.className = 'skill-node';
+            if (!isUnlocked) node.classList.add('locked');
+            else node.classList.add('unlocked');
+            if (level >= skill.maxLevel) node.classList.add('maxed');
+            node.innerHTML = `
+                <div class="skill-name">${skill.name}</div>
+                <div class="skill-level">Lv ${level}/${skill.maxLevel}</div>
+                <div class="skill-cost">Cost: ${SkillManager.getSkillCost(skill.id)}</div>
+            `;
+            if (isUnlocked && level < skill.maxLevel) {
+                node.onclick = () => SkillManager.purchaseSkill(skill.id);
+            }
+            tierDiv.appendChild(node);
+        });
+        container.appendChild(tierDiv);
+    });
+}
+function openSkillsModal() {
+    if (TDState.running) pauseGame(true); // Special pause for modal
+    renderSkillTree();
+    document.getElementById('skills-modal').style.display = 'flex';
+}
+function closeSkillsModal() {
+    document.getElementById('skills-modal').style.display = 'none';
+}
+
+// ---------------------------- Save/Load System ----------------------------
 function saveGame() {
     const gameState = {
         gold: TDState.gold, wave: TDState.wave, kills: TDState.enemiesKilled, gems: TDState.gemsEarned,
@@ -533,7 +747,7 @@ function saveGame() {
             range: TDState.hero.range, crit: TDState.hero.crit, speed: TDState.hero.speed
         },
         upgradeLevels: UpgradeManager.levels,
-        skillLevels: SkillManager.levels // Save skill levels
+        skillLevels: SkillManager.levels
     };
     localStorage.setItem(TD_CONFIG.saveKey, JSON.stringify(gameState));
 }
@@ -548,13 +762,105 @@ function loadGame() {
         TDState.hero.range = data.hero.range; TDState.hero.crit = data.hero.crit;
         TDState.hero.speed = data.hero.speed || 150;
         UpgradeManager.levels = data.upgradeLevels;
-        SkillManager.levels = data.skillLevels || {}; // Load skill levels
+        SkillManager.levels = data.skillLevels || {};
         return true;
     }
     return false;
 }
+function clearSave() { localStorage.removeItem(TD_CONFIG.saveKey); }
 
-// --- MODIFICATION to main event listener ---
+// ---------------------------- Game Control ----------------------------
+function initGame() {
+    setupCanvas(); MetaUpgrades.load(); TDState.castle = new Castle();
+    TDState.hero = new Hero(); TDState.waveManager = new WaveManager(); 
+    UpgradeManager.init(); SkillManager.init();
+    if (loadGame()) {
+        document.getElementById('start-button').textContent = "Resume";
+        document.getElementById('call-wave-button').style.display = 'block';
+        SkillManager.applyAllLoadedEffects();
+    } else { TDState.gold = 100 + MetaUpgrades.getBonus('startingGold'); }
+    updateUI(); draw();
+}
+function startGame() {
+    if (TDState.running || TDState.gameOver) return;
+    TDState.running = true;
+    document.getElementById('start-button').style.display = 'none';
+    document.getElementById('pause-button').style.display = 'block';
+    TDState.lastTime = performance.now();
+    if (TDState.wave === 0) { TDState.waveManager.startNextWave(); } 
+    else { TDState.betweenWaves = true; document.getElementById('call-wave-button').style.display = 'block'; }
+    gameLoop(TDState.lastTime);
+}
+function pauseGame(isModalOpen = false) {
+    if (!TDState.running) return;
+    TDState.running = false;
+    if (!isModalOpen) {
+        document.getElementById('start-button').textContent = "Resume";
+        document.getElementById('start-button').style.display = 'block';
+        document.getElementById('pause-button').style.display = 'none';
+    }
+    saveGame();
+    cancelAnimationFrame(animationFrameId);
+}
+function callWaveEarly() {
+    if (TDState.betweenWaves && !TDState.waveManager.spawning) {
+        const bonus = 5 * (TDState.wave + 1); TDState.gold += bonus;
+        floatingTextPool.get(`Early Bonus! +${bonus}`, canvasWidth/2, canvasHeight - 150, '#ffeb3b');
+        TDState.waveManager.startNextWave(); AudioManager.play('ui_click');
+    }
+}
+function useEmpBlast() {
+    const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
+    if (cooldownTime <= 0) {
+        TDState.abilities.empBlast.lastUsed = now();
+        TDState.enemies.forEach(e => { if (e.active) e.stunnedUntil = now() + 3000; });
+        TDState.screenShake = { intensity: 20, duration: 300 };
+        AudioManager.play('emp_blast');
+        particlePool.spawn(TDState.hero.x, TDState.hero.y, 100, '#82ccdd');
+    }
+}
+function upgradeCastleHp() {
+    const stat = 'castleHp';
+    if (!UpgradeManager.canAffordUpgrade(stat)) {
+        floatingTextPool.get('Not enough gold!', canvasWidth / 2, canvasHeight - 150, '#ef5350', 1000);
+        AudioManager.play('error'); return;
+    }
+    UpgradeManager.payForUpgrade(stat); AudioManager.play('upgrade');
+    const oldMaxHp = TDState.castle.maxHp;
+    TDState.castle.maxHp = Math.min(MAXS.CASTLE_HP, TDState.castle.maxHp + 50);
+    const hpGained = TDState.castle.maxHp - oldMaxHp;
+    TDState.castle.hp += hpGained;
+    floatingTextPool.get(`+50 Max HP`, canvasWidth / 2, canvasHeight - 150, '#4caf50', 800);
+    updateUI();
+}
+
+// ---------------------------- Event Listeners ----------------------------
+function handleJoystickStart(e) {
+    if (e.target !== canvas) return; e.preventDefault();
+    joystick.active = true;
+    const rect = canvas.getBoundingClientRect(); const touch = e.changedTouches ? e.changedTouches[0] : e;
+    joystick.start.x = touch.clientX - rect.left; joystick.start.y = touch.clientY - rect.top;
+    joystick.current.x = joystick.start.x; joystick.current.y = joystick.start.y;
+}
+function handleJoystickMove(e) {
+    if (!joystick.active) return; e.preventDefault();
+    const rect = canvas.getBoundingClientRect(); const touch = e.changedTouches ? e.changedTouches[0] : e;
+    const moveX = touch.clientX - rect.left; const moveY = touch.clientY - rect.top;
+    const dx = moveX - joystick.start.x, dy = moveY - joystick.start.y; const dist = Math.hypot(dx, dy);
+    if (dist < joystick.deadzone) {
+        joystick.vector.x = 0; joystick.vector.y = 0;
+        joystick.current.x = moveX; joystick.current.y = moveY;
+        return;
+    }
+    const angle = Math.atan2(dy, dx); const clampedDist = Math.min(dist, joystick.radius);
+    joystick.current.x = joystick.start.x + Math.cos(angle) * clampedDist;
+    joystick.current.y = joystick.start.y + Math.sin(angle) * clampedDist;
+    joystick.vector.x = Math.cos(angle); joystick.vector.y = Math.sin(angle);
+}
+function handleJoystickEnd(e) {
+    if (!joystick.active) return; e.preventDefault();
+    joystick.active = false; joystick.vector.x = 0; joystick.vector.y = 0;
+}
 document.addEventListener('DOMContentLoaded', () => {
     AudioManager.init(['shoot', 'enemy_hit', 'enemy_die', 'castle_hit', 'wave_start', 'wave_clear', 'upgrade', 'error', 'emp_blast', 'ui_click']);
     initGame();
@@ -566,9 +872,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('touchend', handleJoystickEnd);
     window.addEventListener('touchcancel', handleJoystickEnd);
     document.getElementById('start-button').addEventListener('click', startGame);
-    document.getElementById('pause-button').addEventListener('click', pauseGame);
-    document.getElementById('skills-button').addEventListener('click', openSkillsModal); // NEW
-    document.getElementById('close-skills-button').addEventListener('click', closeSkillsModal); // NEW
+    document.getElementById('pause-button').addEventListener('click', () => pauseGame(false));
+    document.getElementById('skills-button').addEventListener('click', openSkillsModal);
+    document.getElementById('close-skills-button').addEventListener('click', closeSkillsModal);
     document.getElementById('call-wave-button').addEventListener('click', callWaveEarly);
     document.getElementById('emp-blast-button').addEventListener('click', useEmpBlast);
     document.getElementById('upgrade-damage').addEventListener('click', () => TDState.hero.upgrade('damage'));
