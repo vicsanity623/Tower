@@ -2,7 +2,7 @@
   "name": "Vics Tower Defense",
   "short_name": "Vics TD",
   "description": "An addictive tower defense game where you defend your castle from waves of shit.",
-  "start_url": "/index.html",
+  "start_url": "/Tower/index.html",
   "display": "fullscreen",
   "orientation": "portrait",
   "background_color": "#2a2a4a",
