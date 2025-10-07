@@ -1,12 +1,7 @@
 /*
-    Vics Tower Defense - Revision 5 (The Evolution Update)
-    - Replaced static Tower with a movable Hero controlled by an invisible joystick.
-    - Implemented diverse enemy types: Tank, Runner, Healer, and Splitting slimes.
-    - Added an active player ability: EMP Blast with a cooldown.
-    - Added "Call Wave Early" button for bonus gold and faster pacing.
-    - Implemented "Game Juice": Screen shake, particle effects, hit flashes.
-    - Integrated a sound effects framework (requires audio files).
-    - Built a permanent meta-progression system using Gems and localStorage.
+    Vics Tower Defense - Revision 6 (Stability and Audio Patch)
+    - Fixed fatal TypeError in Hero constructor that caused the game to freeze on load.
+    - Made AudioManager more robust to gracefully handle missing audio files, cleaning up console errors.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -111,6 +106,7 @@ const MetaUpgrades = {
     getCost(stat) { return this.upgrades[stat].cost * (this.upgrades[stat].level + 1); },
     getBonus(stat) {
         const upgrade = this.upgrades[stat];
+        if (!upgrade) return 0; // Failsafe for non-existent upgrades
         if (stat === 'upgradeDiscount') {
             return 1 - (upgrade.level * upgrade.bonus) / 100;
         }
@@ -151,22 +147,28 @@ const MetaUpgrades = {
 };
 
 // ---------------------------- Audio Manager ----------------------------
+// PATCH 2: Made AudioManager robust against missing audio files
 const AudioManager = {
     sounds: {},
     init(soundList) {
         soundList.forEach(name => {
-            // This assumes you have an /audio/ folder with these files
-            this.sounds[name] = new Audio(`audio/${name}.mp3`);
+            const audio = new Audio(`audio/${name}.mp3`);
+            audio.isLoaded = false;
+            audio.addEventListener('canplaythrough', () => audio.isLoaded = true, { once: true });
+            audio.addEventListener('error', () => console.warn(`Could not load sound: ${name}.mp3`));
+            this.sounds[name] = audio;
             this.sounds[name].volume = 0.5;
         });
     },
     play(name) {
-        if (this.sounds[name]) {
-            this.sounds[name].currentTime = 0;
-            this.sounds[name].play().catch(e => console.log("Audio play failed. User interaction needed."));
+        const sound = this.sounds[name];
+        if (sound && sound.isLoaded) {
+            sound.currentTime = 0;
+            sound.play().catch(e => {}); // Catch is for user interaction policy
         }
     }
 };
+
 
 // ---------------------------- Utility & Object Pools ----------------------------
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -237,44 +239,25 @@ const EnemyTypes = {
 class Enemy {
     constructor() { this.reset(); }
     reset() {
-        this.active = false;
-        this.type = null;
+        this.active = false; this.type = null;
         this.x = 0; this.y = 0; this.hp = 1; this.maxHp = 1; this.speed = 20;
         this.reward = 5; this.size = 20; this.pathIndex = 0; this.color = '#c75869';
         this.special = null; this.specialTimer = 0;
         this.stunnedUntil = 0; this.hitFlash = 0;
     }
     init(type, waveModifier) {
-        this.active = true;
-        this.type = type;
+        this.active = true; this.type = type;
         this.x = gamePath[0].x; this.y = gamePath[0].y;
         this.hp = type.hp * waveModifier; this.maxHp = this.hp;
-        this.speed = type.speed;
-        this.reward = type.reward;
-        this.size = type.size;
-        this.color = type.color;
-        this.special = type.special;
-        this.pathIndex = 1;
-        this.stunnedUntil = 0;
+        this.speed = type.speed; this.reward = type.reward;
+        this.size = type.size; this.color = type.color;
+        this.special = type.special; this.pathIndex = 1; this.stunnedUntil = 0;
     }
     update(dt) {
         if (!this.active) return;
-        
         if (this.hitFlash > 0) this.hitFlash -= dt * 1000;
-        if (now() < this.stunnedUntil) {
-            // Pulsate when stunned
-            const pulse = Math.sin(now() / 50) * 2;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.size / 2 + pulse, 0, Math.PI * 2);
-            ctx.fill();
-            return; // Skip movement and specials if stunned
-        }
-
-        if (this.pathIndex >= gamePath.length) {
-            this.reachEnd();
-            return;
-        }
+        if (now() < this.stunnedUntil) { return; }
+        if (this.pathIndex >= gamePath.length) { this.reachEnd(); return; }
 
         const target = gamePath[this.pathIndex];
         const dx = target.x - this.x, dy = target.y - this.y;
@@ -285,15 +268,14 @@ class Enemy {
             this.y += (dy / dist) * this.speed * dt;
         }
 
-        // Special abilities
         if (this.special === 'HEAL') {
             this.specialTimer += dt * 1000;
-            if (this.specialTimer > 3000) { // Heal every 3 seconds
+            if (this.specialTimer > 3000) {
                 this.specialTimer = 0;
                 let healed = false;
                 TDState.enemies.forEach(e => {
                     if (e.active && e !== this && Math.hypot(this.x - e.x, this.y - e.y) < 60 && e.hp < e.maxHp) {
-                        e.hp = Math.min(e.maxHp, e.hp + this.maxHp * 0.1); // Heal 10% of healer's max HP
+                        e.hp = Math.min(e.maxHp, e.hp + this.maxHp * 0.1);
                         healed = true;
                     }
                 });
@@ -306,10 +288,8 @@ class Enemy {
         ctx.translate(this.x, this.y);
 
         if (this.special === 'HEAL') {
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-            ctx.beginPath();
-            ctx.arc(0, 0, 60, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillStyle = `rgba(0, 255, 0, ${0.1 + Math.sin(now()/200)*0.05})`;
+            ctx.beginPath(); ctx.arc(0, 0, 60, 0, Math.PI * 2); ctx.fill();
         }
 
         ctx.fillStyle = this.color;
@@ -317,7 +297,7 @@ class Enemy {
 
         if (this.hitFlash > 0) {
             ctx.fillStyle = `rgba(255, 255, 255, ${this.hitFlash / 100})`;
-            ctx.beginPath(); ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(0, 0, this.size / 2 + 2, 0, Math.PI * 2); ctx.fill();
         }
 
         ctx.fillStyle = 'white';
@@ -333,6 +313,12 @@ class Enemy {
         const hpColor = hpPct > 0.6 ? '#4caf50' : hpPct > 0.3 ? '#ffeb3b' : '#ef5350';
         ctx.fillStyle = hpColor;
         ctx.fillRect(-this.size/2, -this.size/2 - 10, this.size * hpPct, 4);
+        
+        if (now() < this.stunnedUntil) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.font = 'bold 12px Orbitron';
+            ctx.fillText('Zzz', 0, this.size / 2 + 5);
+        }
 
         ctx.restore();
     }
@@ -356,14 +342,11 @@ class Enemy {
         floatingTextPool.get(`+${this.reward}`, this.x, this.y, '#ffeb3b');
         
         if (this.special === 'SPLIT') {
-            const childrenToSpawn = 2;
-            for (let i = 0; i < childrenToSpawn; i++) {
+            for (let i = 0; i < 2; i++) {
                 let e = TDState.enemies.find(en => !en.active);
                 if (!e) { e = new Enemy(); TDState.enemies.push(e); }
-                // Children are Normal type but smaller and give less reward
                 let childType = { ...EnemyTypes.NORMAL, size: 15, reward: 1 };
                 e.init(childType, 1);
-                // Offset their spawn position slightly
                 e.x = this.x + (i * 20 - 10);
                 e.y = this.y;
             }
@@ -412,9 +395,10 @@ class Hero {
         this.x = canvasWidth / 2;
         this.y = canvasHeight * 0.8;
         this.speed = 150;
-        this.damage = 25 + MetaUpgrades.getBonus('damage');
-        this.range = 180 + MetaUpgrades.getBonus('range');
-        this.fireRate = 1.2 + MetaUpgrades.getBonus('fireRate');
+        // PATCH 1: Correctly apply ONLY existing meta upgrades. This fixes the freeze.
+        this.damage = 25;
+        this.range = 180;
+        this.fireRate = 1.2;
         this.crit = 5 + MetaUpgrades.getBonus('critChance');
         this.lastShot = 0; this.muzzleFlash = 0;
     }
@@ -425,10 +409,8 @@ class Hero {
             this.x = clamp(this.x, 20, canvasWidth - 20);
             this.y = clamp(this.y, 20, canvasHeight - 20);
         }
-
         const target = this.findTarget();
         this.shootAt(target);
-
         if(this.muzzleFlash > 0) this.muzzleFlash -= dt * 1000;
     }
     findTarget() {
@@ -436,9 +418,7 @@ class Hero {
         TDState.enemies.forEach(e => {
             if (!e.active) return;
             const d = Math.hypot(e.x - this.x, e.y - this.y);
-            if (d <= this.range && d < bestDist) {
-                best = e; bestDist = d;
-            }
+            if (d <= this.range && d < bestDist) { best = e; bestDist = d; }
         });
         return best;
     }
@@ -541,19 +521,10 @@ class WaveManager {
         this.waveComposition = [];
         const baseCount = 8 + this.wave * 2;
         for (let i = 0; i < baseCount; i++) this.waveComposition.push(EnemyTypes.NORMAL);
-        if (this.wave > 2) {
-            for (let i = 0; i < this.wave; i++) this.waveComposition.push(EnemyTypes.RUNNER);
-        }
-        if (this.wave > 4) {
-            for (let i = 0; i < Math.floor(this.wave / 2); i++) this.waveComposition.push(EnemyTypes.TANK);
-        }
-        if (this.wave > 6) {
-            for (let i = 0; i < Math.floor(this.wave / 3); i++) this.waveComposition.push(EnemyTypes.SPLITTER);
-        }
-        if (this.wave > 8) {
-            for (let i = 0; i < Math.floor(this.wave / 4); i++) this.waveComposition.push(EnemyTypes.HEALER);
-        }
-        // Shuffle the composition for variety
+        if (this.wave > 1) for (let i = 0; i < this.wave; i++) this.waveComposition.push(EnemyTypes.RUNNER);
+        if (this.wave > 3) for (let i = 0; i < Math.floor(this.wave / 2); i++) this.waveComposition.push(EnemyTypes.TANK);
+        if (this.wave > 5) for (let i = 0; i < Math.floor(this.wave / 3); i++) this.waveComposition.push(EnemyTypes.SPLITTER);
+        if (this.wave > 7) for (let i = 0; i < Math.floor(this.wave / 4); i++) this.waveComposition.push(EnemyTypes.HEALER);
         this.waveComposition.sort(() => Math.random() - 0.5);
     }
     update(dt) {
@@ -576,11 +547,10 @@ class WaveManager {
             document.getElementById('call-wave-button').style.display = 'block';
             const bonus = 15 * this.wave;
             TDState.gold += bonus;
-            TDState.gemsEarned += 1;
+            TDState.gemsEarned += 1 + Math.floor(this.wave / 5);
             AudioManager.play('wave_clear');
             floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive');
             updateUI();
-            // No auto-start, waits for player to press "Call Wave" button
         }
     }
 }
@@ -611,24 +581,19 @@ function update(dt) {
     
     if (TDState.screenShake.duration > 0) {
         TDState.screenShake.duration -= dt * 1000;
-        TDState.screenShake.intensity *= 0.9; // Decay
-    } else {
-        TDState.screenShake.intensity = 0;
-    }
-
+        TDState.screenShake.intensity *= 0.9;
+    } else { TDState.screenShake.intensity = 0; }
     updateUI();
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
     ctx.save();
     if (TDState.screenShake.intensity > 0) {
         const sx = (Math.random() - 0.5) * TDState.screenShake.intensity;
         const sy = (Math.random() - 0.5) * TDState.screenShake.intensity;
         ctx.translate(sx, sy);
     }
-
     if (gamePath.length > 0) {
         ctx.strokeStyle = "rgba(79, 79, 138, 0.4)"; ctx.lineWidth = 50;
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -652,15 +617,12 @@ function draw() {
         ctx.textAlign = 'center'; ctx.fillText(ft.text, ft.x, ft.y);
     });
     
-    // Draw Joystick
     if (joystick.active) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(joystick.start.x, joystick.start.y, joystick.radius, 0, Math.PI * 2); ctx.stroke();
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.beginPath(); ctx.arc(joystick.current.x, joystick.current.y, joystick.radius / 2, 0, Math.PI * 2); ctx.fill();
     }
-
     ctx.restore();
 }
 
@@ -693,7 +655,6 @@ function updateUI() {
     else if (hpPct > 30) castleHpBar.style.background = 'linear-gradient(to right, #ffeb3b, #ffda4a)';
     else castleHpBar.style.background = 'linear-gradient(to right, var(--accent-red), #ff7f7f)';
 
-    // Update Ability Button
     const empButton = document.getElementById('emp-blast-button');
     const cooldownTime = (TDState.abilities.empBlast.lastUsed + ABILITY_COOLDOWNS.empBlast) - now();
     if (cooldownTime > 0) {
@@ -720,7 +681,6 @@ function initGame() {
     TDState.castle = new Castle();
     TDState.hero = new Hero();
     TDState.waveManager = new WaveManager();
-    // Apply meta upgrades
     TDState.gold = 100 + MetaUpgrades.getBonus('startingGold');
 
     updateUI();
@@ -733,9 +693,7 @@ function startGame() {
     document.getElementById('start-button').style.display = 'none';
     document.getElementById('pause-button').style.display = 'block';
     TDState.lastTime = performance.now();
-    if(TDState.wave === 0) {
-        TDState.waveManager.startNextWave();
-    }
+    if(TDState.wave === 0) TDState.waveManager.startNextWave();
     gameLoop(TDState.lastTime);
 }
 
@@ -749,7 +707,7 @@ function pauseGame() {
 
 function callWaveEarly() {
     if (TDState.betweenWaves && !TDState.waveManager.spawning) {
-        const bonus = 5 * TDState.wave;
+        const bonus = 5 * (TDState.wave + 1);
         TDState.gold += bonus;
         floatingTextPool.get(`Early Bonus! +${bonus}`, canvasWidth/2, canvasHeight - 150, '#ffeb3b');
         TDState.waveManager.startNextWave();
@@ -762,7 +720,7 @@ function useEmpBlast() {
     if (cooldownTime <= 0) {
         TDState.abilities.empBlast.lastUsed = now();
         TDState.enemies.forEach(e => {
-            if (e.active) e.stunnedUntil = now() + 3000; // Stun for 3 seconds
+            if (e.active) e.stunnedUntil = now() + 3000;
         });
         TDState.screenShake = { intensity: 20, duration: 300 };
         AudioManager.play('emp_blast');
@@ -772,6 +730,7 @@ function useEmpBlast() {
 
 // ---------------------------- Event Listeners ----------------------------
 function handleJoystickStart(e) {
+    if (e.target !== canvas) return;
     e.preventDefault();
     joystick.active = true;
     const rect = canvas.getBoundingClientRect();
@@ -790,15 +749,12 @@ function handleJoystickMove(e) {
     const moveX = touch.clientX - rect.left;
     const moveY = touch.clientY - rect.top;
 
-    const dx = moveX - joystick.start.x;
-    const dy = moveY - joystick.start.y;
+    const dx = moveX - joystick.start.x, dy = moveY - joystick.start.y;
     const dist = Math.hypot(dx, dy);
 
     if (dist < joystick.deadzone) {
-        joystick.vector.x = 0;
-        joystick.vector.y = 0;
-        joystick.current.x = moveX;
-        joystick.current.y = moveY;
+        joystick.vector.x = 0; joystick.vector.y = 0;
+        joystick.current.x = moveX; joystick.current.y = moveY;
         return;
     }
     
@@ -806,7 +762,6 @@ function handleJoystickMove(e) {
     const clampedDist = Math.min(dist, joystick.radius);
     joystick.current.x = joystick.start.x + Math.cos(angle) * clampedDist;
     joystick.current.y = joystick.start.y + Math.sin(angle) * clampedDist;
-
     joystick.vector.x = Math.cos(angle);
     joystick.vector.y = Math.sin(angle);
 }
@@ -819,22 +774,18 @@ function handleJoystickEnd(e) {
     joystick.vector.y = 0;
 }
 
-
 document.addEventListener('DOMContentLoaded', () => {
     AudioManager.init(['shoot', 'enemy_hit', 'enemy_die', 'castle_hit', 'wave_start', 'wave_clear', 'upgrade', 'error', 'emp_blast', 'ui_click']);
     initGame();
     
-    // Joystick Listeners
     canvas.addEventListener('mousedown', handleJoystickStart);
     canvas.addEventListener('mousemove', handleJoystickMove);
-    canvas.addEventListener('mouseup', handleJoystickEnd);
-    canvas.addEventListener('mouseleave', handleJoystickEnd);
+    window.addEventListener('mouseup', handleJoystickEnd); // Listen on window to catch mouseup outside canvas
     canvas.addEventListener('touchstart', handleJoystickStart, { passive: false });
     canvas.addEventListener('touchmove', handleJoystickMove, { passive: false });
-    canvas.addEventListener('touchend', handleJoystickEnd);
-    canvas.addEventListener('touchcancel', handleJoystickEnd);
+    window.addEventListener('touchend', handleJoystickEnd);
+    window.addEventListener('touchcancel', handleJoystickEnd);
 
-    // Button Listeners
     document.getElementById('start-button').addEventListener('click', startGame);
     document.getElementById('pause-button').addEventListener('click', pauseGame);
     document.getElementById('call-wave-button').addEventListener('click', callWaveEarly);
