@@ -40,7 +40,7 @@
         #game-wrapper {
             width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: space-between; align-items: center;
-            max-width: 550px; /* PATCH 1: Increased max-width for a wider layout */
+            max-width: 550px;
             position: relative;
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
             background-color: rgba(0,0,0,0.2);
@@ -95,7 +95,8 @@
 
         #game-controls {
             position: absolute; top: 105px; right: 15px;
-            display: flex; gap: 8px; z-index: 50;
+            display: flex; flex-direction: column; /* Changed to column */
+            gap: 10px; z-index: 50;
         }
         .control-button {
             padding: 10px 18px; font-size: 15px; color: var(--text-light);
@@ -203,10 +204,8 @@
             font-family: 'Press Start 2P', cursive;
         }
         
-        #upgrade-castle-hp {
-            display: none;
-        }
-
+        #upgrade-castle-hp { display: none; }
+        
         .modal-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.7);
@@ -217,25 +216,92 @@
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         .modal-panel {
-            width: 80%; padding: 25px;
+            width: 90%; height: 80%;
+            padding: 20px; box-sizing: border-box;
             background: linear-gradient(to bottom, var(--panel-bg-light), var(--panel-bg-dark));
             border: 2px solid var(--panel-border); border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column;
         }
-        .modal-panel h2 {
-            font-family: 'Bangers', cursive; font-size: 42px;
-            color: var(--text-light); margin: 0 0 20px 0;
-            text-shadow: 0 0 10px var(--accent-red);
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px;
         }
-        .stat-line { font-size: 18px; margin-bottom: 10px; color: var(--text-dark); }
-        #gems-earned-stat { color: var(--accent-gold); font-weight: bold; }
-        .modal-button {
-            margin-top: 20px; padding: 15px 30px; font-size: 20px;
-            color: var(--text-light); background: var(--accent-green);
-            border: none; border-radius: 12px;
-            cursor: pointer; transition: transform 0.2s;
+        .modal-header h2 {
+            font-family: 'Bangers', cursive; font-size: 36px;
+            color: var(--text-light); margin: 0;
+            text-shadow: 0 0 10px var(--accent-blue);
         }
-        .modal-button:hover { transform: scale(1.05); }
+        .close-button {
+            font-size: 24px; color: var(--text-light);
+            background: var(--accent-red); border: none;
+            border-radius: 50%; width: 40px; height: 40px;
+            cursor: pointer;
+        }
+
+        /* --- NEW: SKILL TREE STYLES --- */
+        #skill-tree-container {
+            flex-grow: 1; overflow-y: auto;
+            display: flex; flex-direction: column; align-items: center;
+            gap: 20px; padding: 10px;
+        }
+        .skill-tier {
+            display: flex; justify-content: center;
+            gap: 25px;
+            position: relative;
+        }
+        .skill-node {
+            width: 80px; height: 100px;
+            background: var(--panel-bg-dark); border: 2px solid var(--panel-border);
+            border-radius: 10px; padding: 8px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            text-align: center;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .skill-node::before { /* Connection line upwards */
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 3px;
+            height: 20px; /* The gap between nodes */
+            background-color: var(--panel-border);
+        }
+        .skill-tier:first-child .skill-node::before {
+            display: none; /* No line on the root node */
+        }
+        .skill-name {
+            font-size: 12px; font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .skill-level {
+            font-size: 11px; color: var(--text-dark);
+        }
+        .skill-cost {
+            font-size: 11px; color: var(--accent-gold);
+            font-family: 'Press Start 2P', cursive;
+            margin-top: auto; /* Push cost to the bottom */
+        }
+        .skill-node.locked {
+            background: #222;
+            border-color: #444;
+            color: #666;
+            pointer-events: none;
+            filter: grayscale(80%);
+        }
+        .skill-node.locked .skill-cost { color: #666; }
+        .skill-node.unlocked:hover {
+            border-color: var(--accent-gold);
+            transform: scale(1.05);
+        }
+        .skill-node.maxed {
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 15px var(--accent-gold);
+        }
+        .skill-node.maxed .skill-level { color: var(--accent-gold); }
 
     </style>
 </head>
@@ -254,6 +320,7 @@
         <div id="game-controls">
             <button id="start-button" class="control-button">Start</button>
             <button id="pause-button" class="control-button">Pause</button>
+            <button id="skills-button" class="control-button">Skills</button>
         </div>
         <div id="canvas-overlay-container">
             <button id="call-wave-button">Call Wave (+Bonus)</button>
@@ -265,48 +332,43 @@
             <button id="emp-blast-button" class="ability-button">EMP</button>
         </div>
         <footer id="ui-panel">
-            <div id="upgrade-damage" class="upgrade-button">
-                <span class="stat-name">Hero Attack</span>
-                <span id="damage-value" class="stat-value">25</span>
-                <span id="damage-cost" class="upgrade-cost">Cost: 50</span>
-            </div>
-            <div id="upgrade-fireRate" class="upgrade-button">
-                <span class="stat-name">Attack Speed</span>
-                <span id="fireRate-value" class="stat-value">1.2/s</span>
-                <span id="fireRate-cost" class="upgrade-cost">Cost: 80</span>
-            </div>
-            <div id="upgrade-range" class="upgrade-button">
-                <span class="stat-name">Hero Range</span>
-                <span id="range-value" class="stat-value">180</span>
-                <span id="range-cost" class="upgrade-cost">Cost: 60</span>
-            </div>
-            <div id="upgrade-crit" class="upgrade-button">
-                <span class="stat-name">Critical Chance</span>
-                <span id="crit-value" class="stat-value">5%</span>
-                <span id="crit-cost" class="upgrade-cost">Cost: 120</span>
-            </div>
-            <div id="upgrade-castle-hp" class="upgrade-button">
-                <span class="stat-name">Castle HP</span>
-                <span id="castleHp-value" class="stat-value">1000</span>
-                <span id="castleHp-cost" class="upgrade-cost">Cost: 1000</span>
-            </div>
+            <div id="upgrade-damage" class="upgrade-button"><span class="stat-name">Hero Attack</span><span id="damage-value" class="stat-value">25</span><span id="damage-cost" class="upgrade-cost">Cost: 50</span></div>
+            <div id="upgrade-fireRate" class="upgrade-button"><span class="stat-name">Attack Speed</span><span id="fireRate-value" class="stat-value">1.2/s</span><span id="fireRate-cost" class="upgrade-cost">Cost: 80</span></div>
+            <div id="upgrade-range" class="upgrade-button"><span class="stat-name">Hero Range</span><span id="range-value" class="stat-value">180</span><span id="range-cost" class="upgrade-cost">Cost: 60</span></div>
+            <div id="upgrade-crit" class="upgrade-button"><span class="stat-name">Critical Chance</span><span id="crit-value" class="stat-value">5%</span><span id="crit-cost" class="upgrade-cost">Cost: 120</span></div>
+            <div id="upgrade-castle-hp" class="upgrade-button"><span class="stat-name">Castle HP</span><span id="castleHp-value" class="stat-value">1000</span><span id="castleHp-cost" class="upgrade-cost">Cost: 1000</span></div>
         </footer>
+
         <div id="game-over-screen" class="modal-overlay">
             <div class="modal-panel">
                 <h2>Game Over</h2>
                 <div id="final-wave-stat" class="stat-line">Wave Reached: 0</div>
                 <div id="final-kills-stat" class="stat-line">Slimes Defeated: 0</div>
                 <div id="gems-earned-stat" class="stat-line">Gems Earned: 0</div>
-                <button id="restart-button" class="modal-button" onclick="window.location.reload()">Play Again</button>
+                <button class="modal-button" onclick="window.location.reload()">Play Again</button>
+            </div>
+        </div>
+
+        <!-- NEW: SKILLS MODAL -->
+        <div id="skills-modal" class="modal-overlay">
+            <div class="modal-panel">
+                <div class="modal-header">
+                    <h2>Skill Tree</h2>
+                    <button id="close-skills-button" class="close-button">X</button>
+                </div>
+                <div id="skill-tree-container">
+                    <!-- Skill nodes will be dynamically generated here by game.js -->
+                </div>
             </div>
         </div>
     </div>
+
     <script src="game.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(registration => console.log('ServiceWorker registration successful with scope: ', registration.scope))
+                    .then(registration => console.log('ServiceWorker registration successful'))
                     .catch(err => console.log('ServiceWorker registration failed: ', err));
             });
         }
