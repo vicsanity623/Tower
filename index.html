@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>Vics Tower Defense</title>
+    <title>Vics Tower</title>
     <style>
         :root {
             --bg-color: #3d4b6b;
-            --panel-bg: #5f749c;
-            --panel-border: #313d58;
+            --panel-bg: #2c3a58;
+            --panel-border: #232d43;
             --text-light: #ffffff;
             --text-dark: #d0d8e8;
             --accent-green: #63d68c;
-            --accent-blue: #58a7e4;
+            --accent-red: #c75869;
             --accent-gold: #ffc93c;
         }
 
@@ -26,6 +26,7 @@
             font-family: 'Helvetica Neue', Arial, sans-serif;
             font-weight: bold;
             color: var(--text-light);
+            user-select: none;
         }
 
         #game-wrapper {
@@ -35,25 +36,49 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            max-width: 450px; /* Max width for mobile-like view on desktop */
+            max-width: 450px;
             margin: auto;
+            position: relative;
         }
 
-        /* Top Resource Bar */
+        /* Top UI elements */
+        #top-ui-container {
+            position: absolute;
+            top: 20px;
+            left: 10px;
+            right: 10px;
+            z-index: 10;
+        }
+        
         #resource-bar {
             width: 100%;
-            padding: 10px 0;
+            padding: 8px 0;
             display: flex;
             justify-content: space-around;
-            background-color: var(--panel-border);
-            border-bottom: 3px solid rgba(0,0,0,0.2);
+            background-color: rgba(0,0,0,0.3);
+            border-radius: 12px;
             box-sizing: border-box;
+            margin-bottom: 10px;
         }
         .resource-item {
-            background: rgba(0,0,0,0.2);
             padding: 5px 15px;
-            border-radius: 20px;
             font-size: 16px;
+        }
+
+        /* Castle HP Bar */
+        #castle-hp-bar-container {
+            width: 100%;
+            height: 20px;
+            background-color: var(--panel-border);
+            border-radius: 10px;
+            border: 2px solid rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        #castle-hp-bar {
+            width: 100%;
+            height: 100%;
+            background-color: var(--accent-green);
+            transition: width 0.3s ease-out;
         }
 
         /* Main Game Canvas */
@@ -68,20 +93,44 @@
             height: 100%;
         }
 
+        /* Game Controls (Start/Pause) */
+        #game-controls {
+            position: absolute;
+            top: 75px;
+            right: 10px;
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+        .control-button {
+            padding: 8px 15px;
+            font-size: 14px;
+            color: white;
+            border: 1px solid #000;
+            border-radius: 8px;
+            cursor: pointer;
+            background-color: rgba(0,0,0,0.4);
+        }
+
         /* Bottom UI Panel */
         #ui-panel {
-            width: 100%;
+            width: 95%;
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             background-color: var(--panel-bg);
-            border-top: 5px solid var(--panel-border);
-            padding: 15px;
+            border: 2px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 12px;
             box-sizing: border-box;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            gap: 10px;
         }
         .upgrade-button {
             background-color: var(--panel-border);
-            border: 2px solid rgba(0,0,0,0.3);
+            border: 1px solid rgba(0,0,0,0.3);
             border-radius: 8px;
             padding: 10px;
             display: flex;
@@ -108,47 +157,32 @@
             font-weight: normal;
         }
 
-        /* Game Controls (Start/Pause) */
-        #game-controls {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            display: flex;
-            gap: 10px;
-        }
-        .control-button {
-            padding: 10px 15px;
-            font-size: 16px;
-            color: white;
-            border: 2px solid #555;
-            border-radius: 8px;
-            cursor: pointer;
-            background-color: rgba(0,0,0,0.4);
-        }
-
     </style>
 </head>
 <body>
 
     <div id="game-wrapper">
+        
+        <div id="top-ui-container">
+            <header id="resource-bar">
+                <div id="gold-display" class="resource-item">Gold: 100</div>
+                <div id="wave-display" class="resource-item">Wave: 0</div>
+                <div id="kills-display" class="resource-item">Kills: 0</div>
+            </header>
+            <div id="castle-hp-bar-container">
+                <div id="castle-hp-bar"></div>
+            </div>
+        </div>
+        
+        <div id="game-controls">
+            <button id="start-button" class="control-button">Start</button>
+            <button id="pause-button" class="control-button">Pause</button>
+        </div>
 
-        <!-- TOP RESOURCE BAR -->
-        <header id="resource-bar">
-            <div id="gold-display" class="resource-item">Gold: 100</div>
-            <div id="wave-display" class="resource-item">Wave: 0</div>
-            <div id="kills-display" class="resource-item">Kills: 0</div>
-        </header>
-
-        <!-- GAME CANVAS AREA -->
         <main id="game-container">
             <canvas id="gameCanvas"></canvas>
-            <div id="game-controls">
-                <button id="start-button" class="control-button">Start</button>
-                <button id="pause-button" class="control-button">Pause</button>
-            </div>
         </main>
 
-        <!-- BOTTOM UI PANEL -->
         <footer id="ui-panel">
             <div id="upgrade-damage" class="upgrade-button">
                 <span class="stat-name">Attack</span>
