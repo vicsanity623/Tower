@@ -171,12 +171,12 @@
 
         #ui-panel {
             width: calc(100% - 40px);
-            margin-bottom: 50px; /* PATCH: Increased margin to lift UI from bottom edge */
+            margin-bottom: 50px;
             z-index: 50;
             background: linear-gradient(to top, var(--panel-bg-dark), var(--panel-bg-light), var(--panel-bg-dark));
             border: 2px solid var(--panel-border); border-radius: 18px; padding: 15px;
             box-sizing: border-box; display: grid; 
-            grid-template-columns: repeat(3, 1fr); /* Always use 3 columns now */
+            grid-template-columns: repeat(3, 1fr);
             gap: 12px; box-shadow: 0 -8px 20px rgba(0,0,0,var(--shadow-intensity)), inset 0 0 15px rgba(255,255,255,0.05);
         }
         .upgrade-button {
@@ -207,7 +207,7 @@
         }
         
         #upgrade-castle-hp { display: none; }
-        
+
         .modal-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.7);
@@ -313,11 +313,31 @@
             <button id="emp-blast-button" class="ability-button">EMP</button>
         </div>
         <footer id="ui-panel">
-            <div id="upgrade-damage" class="upgrade-button"><span class="stat-name">Hero Attack</span><span id="damage-value" class="stat-value">25</span><span id="damage-cost" class="upgrade-cost">Cost: 50</span></div>
-            <div id="upgrade-fireRate" class="upgrade-button"><span class="stat-name">Attack Speed</span><span id="fireRate-value" class="stat-value">1.2/s</span><span id="damage-cost" class="upgrade-cost">Cost: 80</span></div>
-            <div id="upgrade-range" class="upgrade-button"><span class="stat-name">Hero Range</span><span id="range-value" class="stat-value">180</span><span id="damage-cost" class="upgrade-cost">Cost: 60</span></div>
-            <div id="upgrade-crit" class="upgrade-button"><span class="stat-name">Critical Chance</span><span id="crit-value" class="stat-value">5%</span><span id="damage-cost" class="upgrade-cost">Cost: 120</span></div>
-            <div id="upgrade-castle-hp" class="upgrade-button"><span class="stat-name">Castle HP</span><span id="castleHp-value" class="stat-value">1000</span><span id="castleHp-cost" class="upgrade-cost">Cost: 1000</span></div>
+            <div id="upgrade-damage" class="upgrade-button">
+                <span class="stat-name">Hero Attack</span>
+                <span id="damage-value" class="stat-value">25</span>
+                <span id="damage-cost" class="upgrade-cost">Cost: 50</span>
+            </div>
+            <div id="upgrade-fireRate" class="upgrade-button">
+                <span class="stat-name">Attack Speed</span>
+                <span id="fireRate-value" class="stat-value">1.2/s</span>
+                <span id="fireRate-cost" class="upgrade-cost">Cost: 80</span>
+            </div>
+            <div id="upgrade-range" class="upgrade-button">
+                <span class="stat-name">Hero Range</span>
+                <span id="range-value" class="stat-value">180</span>
+                <span id="range-cost" class="upgrade-cost">Cost: 60</span>
+            </div>
+            <div id="upgrade-crit" class="upgrade-button">
+                <span class="stat-name">Critical Chance</span>
+                <span id="crit-value" class="stat-value">5%</span>
+                <span id="crit-cost" class="upgrade-cost">Cost: 120</span>
+            </div>
+            <div id="upgrade-castle-hp" class="upgrade-button">
+                <span class="stat-name">Castle HP</span>
+                <span id="castleHp-value" class="stat-value">1000</span>
+                <span id="castleHp-cost" class="upgrade-cost">Cost: 1000</span>
+            </div>
         </footer>
         <div id="game-over-screen" class="modal-overlay">
             <div class="modal-panel">
