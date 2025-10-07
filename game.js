@@ -1,10 +1,8 @@
 /*
-    Vics Tower Defense - Revision 8 (Auto-Save and Persistence)
-    - Implemented a complete auto-save system using localStorage.
-    - Game now automatically saves progress after each wave and on pause.
-    - Added loadGame() function to restore player progress on startup.
-    - "Start" button intelligently changes to "Resume" if a saved game is found.
-    - Added logic to clear saved data after a Game Over for a fresh run.
+    Vics Tower Defense - Revision 9 (Recovery & Late-Game Upgrades)
+    - Added Castle HP recovery system: Player recovers 15% of max HP every 5 waves.
+    - Added a new, unlockable upgrade for Castle HP that appears after wave 25.
+    - Integrated new features seamlessly into existing game managers and UI updates.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -12,7 +10,7 @@ const TD_CONFIG = {
     canvasId: 'gameCanvas',
     waveStartDelay: 3000,
     spawnInterval: 600,
-    saveKey: 'slimeTD_gameState' // Key for localStorage
+    saveKey: 'slimeTD_gameState'
 };
 
 const MAXS = {
@@ -20,7 +18,7 @@ const MAXS = {
     HERO_RANGE: 500,
     HERO_FIRE_RATE: 20,
     CRIT_CHANCE: 90,
-    CASTLE_HP: 1000,
+    CASTLE_HP: 10000, // Increased max possible HP
 };
 
 const UPGRADE_COST_MULT = 1.18;
@@ -198,11 +196,12 @@ const particlePool = {
     }
 };
 
-
 // ---------------------------- Castle Class ----------------------------
 class Castle {
     constructor() {
-        this.hp = MAXS.CASTLE_HP; this.maxHp = MAXS.CASTLE_HP; this.y = canvasHeight;
+        this.hp = 1000; // Start at base
+        this.maxHp = 1000;
+        this.y = canvasHeight;
     }
     takeDamage(amount) {
         this.hp = Math.max(0, this.hp - amount);
@@ -213,9 +212,16 @@ class Castle {
             TDState.gameOver = true; TDState.running = false;
             MetaUpgrades.gems += TDState.gemsEarned;
             MetaUpgrades.save();
-            clearSave(); // Clear the game state on game over
+            clearSave();
             showGameOverScreen();
         }
+        updateUI();
+    }
+    // NEW: Health Recovery Method
+    recoverHp(percentage) {
+        const recoveryAmount = Math.floor(this.maxHp * percentage);
+        this.hp = Math.min(this.maxHp, this.hp + recoveryAmount);
+        floatingTextPool.get(`+${recoveryAmount} HP`, canvasWidth / 2, this.y - 120, '#4caf50', 2500, 'bold 28px "Bangers", cursive');
         updateUI();
     }
     draw(ctx) {}
@@ -392,12 +398,12 @@ class Hero {
 
 // ---------------------------- Upgrade Manager ----------------------------
 const UpgradeManager = {
-    costs: { damage: 50, range: 60, fireRate: 80, crit: 120 },
-    levels: { damage: 0, range: 0, fireRate: 0, crit: 0 },
+    costs: { damage: 50, range: 60, fireRate: 80, crit: 120, castleHp: 1000 },
+    levels: { damage: 0, range: 0, fireRate: 0, crit: 0, castleHp: 0 },
     baseCosts: {},
     init() {
         this.baseCosts = { ...this.costs };
-        this.levels = { damage: 0, range: 0, fireRate: 0, crit: 0 };
+        this.levels = { damage: 0, range: 0, fireRate: 0, crit: 0, castleHp: 0 };
     },
     getCost(stat) {
         const lvl = this.levels[stat];
@@ -433,6 +439,12 @@ class WaveManager {
         this.spawning = false; TDState.betweenWaves = true;
         const bonus = 15 * this.wave; TDState.gold += bonus;
         TDState.gemsEarned += 1 + Math.floor(this.wave / 5);
+        
+        // NEW: Health Recovery Logic
+        if (this.wave > 0 && this.wave % 5 === 0) {
+            TDState.castle.recoverHp(0.15); // Recover 15%
+        }
+
         document.getElementById('call-wave-button').style.display = 'block';
         AudioManager.play('wave_clear');
         floatingTextPool.get(`Wave Cleared! +${bonus} Gold!`, canvasWidth / 2, canvasHeight * 0.4, '#ffeb3b', 2000, 'bold 28px "Bangers", cursive');
@@ -558,6 +570,16 @@ function updateUI() {
         empButton.disabled = false;
         empButton.textContent = 'EMP';
     }
+
+    // NEW: Castle HP Upgrade UI Logic
+    const castleUpgradeButton = document.getElementById('upgrade-castle-hp');
+    if (TDState.wave >= 25) {
+        castleUpgradeButton.style.display = 'flex';
+        document.getElementById('castleHp-value').textContent = TDState.castle.maxHp;
+        document.getElementById('castleHp-cost').textContent = `Cost: ${UpgradeManager.getCost('castleHp')}`;
+    } else {
+        castleUpgradeButton.style.display = 'none';
+    }
 }
 
 function showGameOverScreen() {
@@ -567,43 +589,30 @@ function showGameOverScreen() {
     document.getElementById('gems-earned-stat').textContent = `Gems Earned: ${TDState.gemsEarned}`;
 }
 
-// ---------------------------- NEW: Save/Load System ----------------------------
+// ---------------------------- Save/Load System ----------------------------
 function saveGame() {
     const gameState = {
-        gold: TDState.gold,
-        wave: TDState.wave,
-        kills: TDState.enemiesKilled,
-        gems: TDState.gemsEarned,
-        castleHp: TDState.castle.hp,
+        gold: TDState.gold, wave: TDState.wave, kills: TDState.enemiesKilled, gems: TDState.gemsEarned,
+        castle: { hp: TDState.castle.hp, maxHp: TDState.castle.maxHp },
         hero: {
-            damage: TDState.hero.damage,
-            fireRate: TDState.hero.fireRate,
-            range: TDState.hero.range,
-            crit: TDState.hero.crit,
+            damage: TDState.hero.damage, fireRate: TDState.hero.fireRate,
+            range: TDState.hero.range, crit: TDState.hero.crit,
         },
         upgradeLevels: UpgradeManager.levels,
     };
     localStorage.setItem(TD_CONFIG.saveKey, JSON.stringify(gameState));
-    console.log("Game Saved!");
 }
 
 function loadGame() {
     const savedState = localStorage.getItem(TD_CONFIG.saveKey);
     if (savedState) {
         const data = JSON.parse(savedState);
-        TDState.gold = data.gold;
-        TDState.wave = data.wave;
-        TDState.waveManager.wave = data.wave;
-        TDState.enemiesKilled = data.kills;
-        TDState.gemsEarned = data.gems;
-        TDState.castle.hp = data.castleHp;
-        TDState.hero.damage = data.hero.damage;
-        TDState.hero.fireRate = data.hero.fireRate;
-        TDState.hero.range = data.hero.range;
-        TDState.hero.crit = data.hero.crit;
+        TDState.gold = data.gold; TDState.wave = data.wave; TDState.waveManager.wave = data.wave;
+        TDState.enemiesKilled = data.kills; TDState.gemsEarned = data.gems;
+        TDState.castle.hp = data.castle.hp; TDState.castle.maxHp = data.castle.maxHp;
+        TDState.hero.damage = data.hero.damage; TDState.hero.fireRate = data.hero.fireRate;
+        TDState.hero.range = data.hero.range; TDState.hero.crit = data.hero.crit;
         UpgradeManager.levels = data.upgradeLevels;
-
-        console.log("Game Loaded!");
         return true;
     }
     return false;
@@ -611,9 +620,7 @@ function loadGame() {
 
 function clearSave() {
     localStorage.removeItem(TD_CONFIG.saveKey);
-    console.log("Save data cleared.");
 }
-
 
 // ---------------------------- Game Control ----------------------------
 function initGame() {
@@ -641,13 +648,8 @@ function startGame() {
     document.getElementById('start-button').style.display = 'none';
     document.getElementById('pause-button').style.display = 'block';
     TDState.lastTime = performance.now();
-    if (TDState.wave === 0) {
-        TDState.waveManager.startNextWave();
-    } else {
-        // If resuming, we just unpause. The wave manager is already in the correct state.
-        TDState.betweenWaves = true;
-        document.getElementById('call-wave-button').style.display = 'block';
-    }
+    if (TDState.wave === 0) { TDState.waveManager.startNextWave(); } 
+    else { TDState.betweenWaves = true; document.getElementById('call-wave-button').style.display = 'block'; }
     gameLoop(TDState.lastTime);
 }
 
@@ -657,14 +659,13 @@ function pauseGame() {
     document.getElementById('start-button').textContent = "Resume";
     document.getElementById('start-button').style.display = 'block';
     document.getElementById('pause-button').style.display = 'none';
-    saveGame(); // Save progress when pausing
+    saveGame();
     cancelAnimationFrame(animationFrameId);
 }
 
 function callWaveEarly() {
     if (TDState.betweenWaves && !TDState.waveManager.spawning) {
-        const bonus = 5 * (TDState.wave + 1);
-        TDState.gold += bonus;
+        const bonus = 5 * (TDState.wave + 1); TDState.gold += bonus;
         floatingTextPool.get(`Early Bonus! +${bonus}`, canvasWidth/2, canvasHeight - 150, '#ffeb3b');
         TDState.waveManager.startNextWave();
         AudioManager.play('ui_click');
@@ -682,47 +683,56 @@ function useEmpBlast() {
     }
 }
 
+// NEW: Castle HP Upgrade Function
+function upgradeCastleHp() {
+    const stat = 'castleHp';
+    if (!UpgradeManager.canAffordUpgrade(stat)) {
+        floatingTextPool.get('Not enough gold!', canvasWidth / 2, canvasHeight - 150, '#ef5350', 1000);
+        AudioManager.play('error');
+        return;
+    }
+    UpgradeManager.payForUpgrade(stat);
+    AudioManager.play('upgrade');
+    
+    // Increase max HP and heal for the same amount
+    const oldMaxHp = TDState.castle.maxHp;
+    TDState.castle.maxHp += 50;
+    const hpGained = TDState.castle.maxHp - oldMaxHp;
+    TDState.castle.hp += hpGained;
+
+    floatingTextPool.get(`+50 Max HP`, canvasWidth / 2, canvasHeight - 150, '#4caf50', 800);
+    updateUI();
+}
+
+
 // ---------------------------- Event Listeners ----------------------------
 function handleJoystickStart(e) {
-    if (e.target !== canvas) return;
-    e.preventDefault();
+    if (e.target !== canvas) return; e.preventDefault();
     joystick.active = true;
-    const rect = canvas.getBoundingClientRect();
-    const touch = e.changedTouches ? e.changedTouches[0] : e;
-    joystick.start.x = touch.clientX - rect.left;
-    joystick.start.y = touch.clientY - rect.top;
-    joystick.current.x = joystick.start.x;
-    joystick.current.y = joystick.start.y;
+    const rect = canvas.getBoundingClientRect(); const touch = e.changedTouches ? e.changedTouches[0] : e;
+    joystick.start.x = touch.clientX - rect.left; joystick.start.y = touch.clientY - rect.top;
+    joystick.current.x = joystick.start.x; joystick.current.y = joystick.start.y;
 }
 
 function handleJoystickMove(e) {
-    if (!joystick.active) return;
-    e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const touch = e.changedTouches ? e.changedTouches[0] : e;
-    const moveX = touch.clientX - rect.left;
-    const moveY = touch.clientY - rect.top;
-    const dx = moveX - joystick.start.x, dy = moveY - joystick.start.y;
-    const dist = Math.hypot(dx, dy);
+    if (!joystick.active) return; e.preventDefault();
+    const rect = canvas.getBoundingClientRect(); const touch = e.changedTouches ? e.changedTouches[0] : e;
+    const moveX = touch.clientX - rect.left; const moveY = touch.clientY - rect.top;
+    const dx = moveX - joystick.start.x, dy = moveY - joystick.start.y; const dist = Math.hypot(dx, dy);
     if (dist < joystick.deadzone) {
         joystick.vector.x = 0; joystick.vector.y = 0;
         joystick.current.x = moveX; joystick.current.y = moveY;
         return;
     }
-    const angle = Math.atan2(dy, dx);
-    const clampedDist = Math.min(dist, joystick.radius);
+    const angle = Math.atan2(dy, dx); const clampedDist = Math.min(dist, joystick.radius);
     joystick.current.x = joystick.start.x + Math.cos(angle) * clampedDist;
     joystick.current.y = joystick.start.y + Math.sin(angle) * clampedDist;
-    joystick.vector.x = Math.cos(angle);
-    joystick.vector.y = Math.sin(angle);
+    joystick.vector.x = Math.cos(angle); joystick.vector.y = Math.sin(angle);
 }
 
 function handleJoystickEnd(e) {
-    if (!joystick.active) return;
-    e.preventDefault();
-    joystick.active = false;
-    joystick.vector.x = 0;
-    joystick.vector.y = 0;
+    if (!joystick.active) return; e.preventDefault();
+    joystick.active = false; joystick.vector.x = 0; joystick.vector.y = 0;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -743,4 +753,5 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('upgrade-fireRate').addEventListener('click', () => TDState.hero.upgrade('fireRate'));
     document.getElementById('upgrade-range').addEventListener('click', () => TDState.hero.upgrade('range'));
     document.getElementById('upgrade-crit').addEventListener('click', () => TDState.hero.upgrade('crit'));
+    document.getElementById('upgrade-castle-hp').addEventListener('click', upgradeCastleHp); // NEW event listener
 });
