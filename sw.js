@@ -1,17 +1,13 @@
 // Define the cache name and the files to cache
-const CACHE_NAME = 'vics-td-cache-v1.0.2';
+const CACHE_NAME = 'vics-td-cache-v1.0.3';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/game.js',
-  '/manifest.json',
-  // Add all your icon paths here
-  '/icons/player-192x192.PNG',
-  '/icons/player-512x512.PNG',
-  // Add Google Fonts stylesheets to cache them for offline use
-  'https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@400;700&family=Bangers&display=swap',
-  // Note: Caching Google Fonts' font files themselves is more complex as their URLs are in the CSS file.
-  // This simple service worker will cache the CSS, but a more robust one would parse the CSS to cache the .woff2 files.
+  './',
+  'index.html',
+  'game.js',
+  'manifest.json',
+  'icons/icon-192x192.png',
+  'icons/icon-512x512.png',
+  'https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@400;700&family=Bangers&display=swap'
 ];
 
 // 1. Installation: Open a cache and add the assets to it.
