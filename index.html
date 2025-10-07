@@ -3,135 +3,177 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>Tower Defense Idle</title>
+    <title>Vics Tower Defense</title>
     <style>
+        :root {
+            --bg-color: #3d4b6b;
+            --panel-bg: #5f749c;
+            --panel-border: #313d58;
+            --text-light: #ffffff;
+            --text-dark: #d0d8e8;
+            --accent-green: #63d68c;
+            --accent-blue: #58a7e4;
+            --accent-gold: #ffc93c;
+        }
+
         body, html {
             margin: 0;
             padding: 0;
             overflow: hidden;
             width: 100%;
             height: 100%;
-            background-color: #000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-weight: bold;
+            color: var(--text-light);
         }
-        #game-container {
+
+        #game-wrapper {
             width: 100%;
             height: 100%;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
+            max-width: 450px; /* Max width for mobile-like view on desktop */
+            margin: auto;
+        }
+
+        /* Top Resource Bar */
+        #resource-bar {
+            width: 100%;
+            padding: 10px 0;
+            display: flex;
+            justify-content: space-around;
+            background-color: var(--panel-border);
+            border-bottom: 3px solid rgba(0,0,0,0.2);
+            box-sizing: border-box;
+        }
+        .resource-item {
+            background: rgba(0,0,0,0.2);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 16px;
+        }
+
+        /* Main Game Canvas */
+        #game-container {
+            width: 100%;
+            flex-grow: 1;
             position: relative;
         }
         canvas {
             display: block;
-            background-color: #0b1220;
+            width: 100%;
+            height: 100%;
         }
-        #ui-container {
+
+        /* Bottom UI Panel */
+        #ui-panel {
+            width: 100%;
+            background-color: var(--panel-bg);
+            border-top: 5px solid var(--panel-border);
+            padding: 15px;
+            box-sizing: border-box;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .upgrade-button {
+            background-color: var(--panel-border);
+            border: 2px solid rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .upgrade-button:active {
+            transform: scale(0.97);
+        }
+        .stat-name {
+            font-size: 14px;
+            color: var(--text-dark);
+        }
+        .stat-value {
+            font-size: 18px;
+            margin: 4px 0;
+        }
+        .upgrade-cost {
+            font-size: 14px;
+            color: var(--accent-gold);
+            font-weight: normal;
+        }
+
+        /* Game Controls (Start/Pause) */
+        #game-controls {
             position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 10px;
+            right: 10px;
             display: flex;
             gap: 10px;
-            padding: 10px;
-            background-color: rgba(0, 0, 0, 0.5);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        .ui-button {
-            padding: 12px 20px;
+        .control-button {
+            padding: 10px 15px;
             font-size: 16px;
             color: white;
-            background-color: #333;
             border: 2px solid #555;
             border-radius: 8px;
             cursor: pointer;
-            transition: background-color 0.3s, transform 0.1s;
+            background-color: rgba(0,0,0,0.4);
         }
-        .ui-button:hover {
-            background-color: #555;
-        }
-        .ui-button:active {
-            transform: scale(0.95);
-        }
-        #start-button {
-            background-color: #28a745;
-            border-color: #218838;
-        }
-        #pause-button {
-            background-color: #ffc107;
-            border-color: #e0a800;
-        }
+
     </style>
 </head>
 <body>
 
-    <!-- Your analytics, meta, ads, etc. can go here -->
+    <div id="game-wrapper">
 
-    <div id="game-container">
-        <canvas id="gameCanvas"></canvas>
-        <div id="ui-container">
-            <button id="start-button" class="ui-button">Start</button>
-            <button id="pause-button" class="ui-button">Pause</button>
-            <button id="upgrade-tower-damage" class="ui-button">Upgrade Damage</button>
-            <button id="upgrade-tower-range" class="ui-button">Upgrade Range</button>
-            <button id="upgrade-castle-hp" class="ui-button">Upgrade Castle HP</button>
-        </div>
+        <!-- TOP RESOURCE BAR -->
+        <header id="resource-bar">
+            <div id="gold-display" class="resource-item">Gold: 100</div>
+            <div id="wave-display" class="resource-item">Wave: 0</div>
+            <div id="kills-display" class="resource-item">Kills: 0</div>
+        </header>
+
+        <!-- GAME CANVAS AREA -->
+        <main id="game-container">
+            <canvas id="gameCanvas"></canvas>
+            <div id="game-controls">
+                <button id="start-button" class="control-button">Start</button>
+                <button id="pause-button" class="control-button">Pause</button>
+            </div>
+        </main>
+
+        <!-- BOTTOM UI PANEL -->
+        <footer id="ui-panel">
+            <div id="upgrade-damage" class="upgrade-button">
+                <span class="stat-name">Attack</span>
+                <span id="damage-value" class="stat-value">25</span>
+                <span id="damage-cost" class="upgrade-cost">Cost: 50</span>
+            </div>
+            <div id="upgrade-fireRate" class="upgrade-button">
+                <span class="stat-name">Attack Speed</span>
+                <span id="fireRate-value" class="stat-value">1.2/s</span>
+                <span id="fireRate-cost" class="upgrade-cost">Cost: 80</span>
+            </div>
+            <div id="upgrade-range" class="upgrade-button">
+                <span class="stat-name">Attack Range</span>
+                <span id="range-value" class="stat-value">180</span>
+                <span id="range-cost" class="upgrade-cost">Cost: 60</span>
+            </div>
+            <div id="upgrade-crit" class="upgrade-button">
+                <span class="stat-name">Critical Chance</span>
+                <span id="crit-value" class="stat-value">5%</span>
+                <span id="crit-cost" class="upgrade-cost">Cost: 120</span>
+            </div>
+        </footer>
+
     </div>
 
     <script src="game.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const canvas = document.getElementById('gameCanvas');
-            const gameContainer = document.getElementById('game-container');
-
-            function resizeCanvas() {
-                const dpr = window.devicePixelRatio || 1;
-                const rect = gameContainer.getBoundingClientRect();
-                
-                canvas.width = rect.width * dpr;
-                canvas.height = rect.height * dpr;
-                
-                canvas.style.width = `${rect.width}px`;
-                canvas.style.height = `${rect.height}px`;
-
-                const ctx = canvas.getContext('2d');
-                ctx.scale(dpr, dpr);
-            }
-
-            window.addEventListener('resize', resizeCanvas);
-            resizeCanvas();
-
-            document.getElementById('start-button').addEventListener('click', () => {
-                if (typeof startGameGenesis === 'function') {
-                    startGameGenesis();
-                }
-            });
-
-            document.getElementById('pause-button').addEventListener('click', () => {
-                if (typeof stopGameGenesis === 'function') {
-                    stopGameGenesis();
-                }
-            });
-            
-            document.getElementById('upgrade-tower-damage').addEventListener('click', () => {
-                if (window.TDState && window.TDState.tower) {
-                    window.TDState.tower.upgrade('damage');
-                }
-            });
-
-            document.getElementById('upgrade-tower-range').addEventListener('click', () => {
-                if (window.TDState && window.TDState.tower) {
-                    window.TDState.tower.upgrade('range');
-                }
-            });
-            
-            document.getElementById('upgrade-castle-hp').addEventListener('click', () => {
-                if (window.TDState && window.TDState.castle) {
-                    window.TDState.castle.upgrade('hp');
-                }
-            });
-        });
-    </script>
 </body>
 </html>
