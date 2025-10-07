@@ -94,7 +94,7 @@
         }
 
         #game-controls {
-            position: absolute; top: 125px; right: 15px;
+            position: absolute; top: 105px; right: 15px;
             display: flex; gap: 8px; z-index: 50;
         }
         .control-button {
@@ -118,32 +118,24 @@
             cursor: not-allowed; transform: none;
         }
 
-        /* --- NEW: CANVAS OVERLAYS --- */
+        /* --- CORRECTED: CANVAS OVERLAYS --- */
         #canvas-overlay-container {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            z-index: 40;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            pointer-events: none; /* Allows clicks to pass through to the canvas */
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 60; /* PATCH 1: Increased z-index to be ON TOP of the bottom UI panel */
+            display: flex; justify-content: center; align-items: center;
+            pointer-events: none;
         }
         #call-wave-button {
-            position: absolute;
-            bottom: 250px; /* Position it above the bottom UI */
-            pointer-events: auto; /* This specific button is clickable */
-            padding: 12px 24px;
-            font-size: 18px;
-            font-family: 'Bangers', cursive;
-            letter-spacing: 1px;
+            /* PATCH 2: Removed absolute positioning. Will now be centered by the parent flex container. */
+            pointer-events: auto;
+            padding: 12px 24px; font-size: 18px;
+            font-family: 'Bangers', cursive; letter-spacing: 1px;
             color: var(--accent-gold);
             background: linear-gradient(to bottom, var(--panel-bg-light), var(--panel-bg-dark));
-            border: 2px solid var(--accent-gold);
-            border-radius: 15px;
-            cursor: pointer;
-            text-shadow: 0 0 5px black;
+            border: 2px solid var(--accent-gold); border-radius: 15px;
+            cursor: pointer; text-shadow: 0 0 5px black;
             box-shadow: 0 5px 15px rgba(0,0,0,0.6);
-            display: none; /* Hidden by default */
+            display: none;
             animation: pulse 2s infinite;
         }
         @keyframes pulse {
@@ -158,14 +150,9 @@
         }
         canvas { display: block; width: 100%; height: 100%; }
 
-        /* --- NEW: ABILITY BAR --- */
         #ability-bar {
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-top: -15px; /* Pull it up slightly */
-            margin-bottom: 5px;
+            width: 100%; display: flex; justify-content: center;
+            gap: 15px; margin-top: -15px; margin-bottom: 5px;
             z-index: 50;
         }
         .ability-button {
@@ -177,9 +164,7 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.5), inset 0 1px 3px rgba(255,255,255,0.2);
             transition: all 0.2s ease;
         }
-        .ability-button:hover {
-            border-color: var(--accent-blue);
-        }
+        .ability-button:hover { border-color: var(--accent-blue); }
         .ability-button:disabled {
             background: var(--panel-bg-dark); color: var(--text-dark);
             cursor: not-allowed; font-size: 20px;
@@ -219,57 +204,35 @@
             font-family: 'Press Start 2P', cursive;
         }
 
-        /* --- NEW: GAME OVER & MODAL STYLES --- */
         .modal-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.7);
-            display: none; /* Hidden by default */
-            justify-content: center; align-items: center;
-            z-index: 100;
-            backdrop-filter: blur(5px);
+            display: none; justify-content: center; align-items: center;
+            z-index: 100; backdrop-filter: blur(5px);
             animation: fadeIn 0.3s ease-out;
         }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         .modal-panel {
-            width: 80%;
-            padding: 25px;
+            width: 80%; padding: 25px;
             background: linear-gradient(to bottom, var(--panel-bg-light), var(--panel-bg-dark));
-            border: 2px solid var(--panel-border);
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            text-align: center;
+            border: 2px solid var(--panel-border); border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center;
         }
         .modal-panel h2 {
-            font-family: 'Bangers', cursive;
-            font-size: 42px;
-            color: var(--text-light);
-            margin: 0 0 20px 0;
+            font-family: 'Bangers', cursive; font-size: 42px;
+            color: var(--text-light); margin: 0 0 20px 0;
             text-shadow: 0 0 10px var(--accent-red);
         }
-        .stat-line {
-            font-size: 18px;
-            margin-bottom: 10px;
-            color: var(--text-dark);
-        }
-        #gems-earned-stat {
-            color: var(--accent-gold);
-            font-weight: bold;
-        }
+        .stat-line { font-size: 18px; margin-bottom: 10px; color: var(--text-dark); }
+        #gems-earned-stat { color: var(--accent-gold); font-weight: bold; }
         .modal-button {
-            margin-top: 20px;
-            padding: 15px 30px;
-            font-size: 20px;
-            color: var(--text-light);
-            background: var(--accent-green);
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: transform 0.2s;
+            margin-top: 20px; padding: 15px 30px; font-size: 20px;
+            color: var(--text-light); background: var(--accent-green);
+            border: none; border-radius: 12px;
+            cursor: pointer; transition: transform 0.2s;
         }
-        .modal-button:hover {
-            transform: scale(1.05);
-        }
+        .modal-button:hover { transform: scale(1.05); }
 
     </style>
 </head>
@@ -303,7 +266,6 @@
 
         <div id="ability-bar">
             <button id="emp-blast-button" class="ability-button">EMP</button>
-            <!-- Future abilities can be added here -->
         </div>
 
         <footer id="ui-panel">
