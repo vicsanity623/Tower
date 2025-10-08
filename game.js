@@ -1,8 +1,9 @@
 /*
-    Vics Tower Defense - Revision 15 (Final Skill Tree Patch)
-    - Fixed critical bug where upgrading a skill to level 2+ would cause a game state mismatch and crash.
-    - Rearchitected skill application logic to be robust and stateless by recalculating all bonuses on every change.
-    - Renamed and repurposed applyAllSkillEffects to be the single source of truth for stat calculation.
+    Vics Tower Defense - Revision 16 (Marksman Update)
+    - Added a new "Marksman" skill to the skill tree for predictive aiming.
+    - Implemented a 'predictInterception' function to calculate where a moving target will be.
+    - Upgrading the Marksman skill now progressively improves projectile accuracy against moving targets.
+    - Integrated the new aiming logic into the core shooting mechanics.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -128,6 +129,7 @@ const AudioManager = {
 // ---------------------------- Utility & Object Pools ----------------------------
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function now() { return performance.now(); }
+function lerp(a, b, t) { return a * (1 - t) + b * t; } // Linear interpolation helper
 
 const floatingTextPool = {
     pool: [],
@@ -153,12 +155,13 @@ const particlePool = {
     }
 };
 
-// ---------------------------- Skill Tree System (PATCHED) ----------------------------
+// ---------------------------- Skill Tree System ----------------------------
 const SkillTree = {
     multiShot: { id: 'multiShot', name: 'Multi-Shot', maxLevel: 10, unlockWave: 10, requires: null, cost: 500, description: 'Fire +1 projectile at a nearby target.' },
     piercingShot: { id: 'piercingShot', name: 'Piercing Shot', maxLevel: 10, unlockWave: 15, requires: 'multiShot', cost: 800, description: 'Projectiles pierce +1 enemy.' },
     rapidFire: { id: 'rapidFire', name: 'Rapid Fire', maxLevel: 10, unlockWave: 15, requires: 'multiShot', cost: 1200, description: 'Fire an extra projectile burst.' },
     legolas: { id: 'legolas', name: 'Legolas', maxLevel: 10, unlockWave: 20, requires: 'rapidFire', cost: 1500, description: 'Increase fire rate and projectile speed.' },
+    marksman: { id: 'marksman', name: 'Marksman', maxLevel: 10, unlockWave: 22, requires: 'legolas', cost: 2000, description: 'Improves accuracy against moving targets.'},
     follower: { id: 'follower', name: 'Follower', maxLevel: 1, unlockWave: 25, requires: 'piercingShot', cost: 5000, description: 'Spawns a follower that mirrors your movement.' },
     spreadShot: { id: 'spreadShot', name: 'Spread Shot', maxLevel: 10, unlockWave: 30, requires: 'follower', cost: 2500, description: 'All turrets fire +1 projectile in an arc.' },
     godSpeed: { id: 'godSpeed', name: 'God Speed', maxLevel: 10, unlockWave: 30, requires: 'follower', cost: 2000, description: 'Increases Hero movement speed.' },
@@ -167,35 +170,26 @@ const SkillTree = {
 
 const SkillManager = {
     levels: {},
-    init() {
-        Object.keys(SkillTree).forEach(key => this.levels[key] = 0);
-    },
+    init() { Object.keys(SkillTree).forEach(key => this.levels[key] = 0); },
     getSkillLevel(id) { return this.levels[id] || 0; },
     getSkillCost(id) {
         const skill = SkillTree[id]; if (!skill) return Infinity;
         return Math.floor(skill.cost * Math.pow(1.5, this.getSkillLevel(id)));
     },
     purchaseSkill(id) {
-        const skill = SkillTree[id];
-        const level = this.getSkillLevel(id);
-        const cost = this.getSkillCost(id);
+        const skill = SkillTree[id]; const level = this.getSkillLevel(id); const cost = this.getSkillCost(id);
         if (TDState.gold >= cost && level < skill.maxLevel) {
-            TDState.gold -= cost;
-            this.levels[id]++;
-            this.recalculateAllSkillEffects(); // Recalculate everything to ensure consistency
-            AudioManager.play('upgrade');
-            renderSkillTree();
-            return true;
+            TDState.gold -= cost; this.levels[id]++;
+            this.recalculateAllSkillEffects();
+            AudioManager.play('upgrade'); renderSkillTree(); return true;
         }
-        AudioManager.play('error');
-        return false;
+        AudioManager.play('error'); return false;
     },
     recalculateAllSkillEffects() {
-        // Reset stats to their base values before applying all skill bonuses
-        TDState.hero.speed = 150;
-        TDState.hero.fireRate = 1.2 + (UpgradeManager.levels.fireRate * 0.15); // Include normal upgrades
+        const heroBase = { speed: 150, fireRate: 1.2 };
+        TDState.hero.speed = heroBase.speed;
+        TDState.hero.fireRate = heroBase.fireRate + (UpgradeManager.levels.fireRate * 0.15);
         
-        // Apply all skill levels from scratch
         const legolasLevels = this.getSkillLevel('legolas');
         if (legolasLevels > 0) TDState.hero.fireRate += 0.5 * legolasLevels;
 
@@ -206,7 +200,6 @@ const SkillManager = {
             TDState.follower = new Follower(TDState.hero);
         }
         
-        // Ensure stats don't exceed max values
         TDState.hero.fireRate = Math.min(MAXS.HERO_FIRE_RATE, TDState.hero.fireRate);
     }
 };
@@ -410,7 +403,6 @@ class Hero {
         if (rapidFireLevel > 0) {
             for (let i = 1; i <= rapidFireLevel; i++) {
                 setTimeout(() => {
-                    // Re-acquire target in case the original died
                     const currentTarget = this.findTarget();
                     if(currentTarget) shootProjectile(this.x, this.y, currentTarget, this.damage * 0.5, this.crit, true);
                 }, 100 * i);
@@ -474,23 +466,81 @@ class Follower {
     }
 }
 
+// ---------------------------- NEW: Predictive Aiming Logic ----------------------------
+function predictInterception(shooterPos, target, projectileSpeed) {
+    if (target.pathIndex >= gamePath.length) return { x: target.x, y: target.y };
+
+    const nextPathPoint = gamePath[target.pathIndex];
+    const targetDx = nextPathPoint.x - target.x;
+    const targetDy = nextPathPoint.y - target.y;
+    const distToNextPoint = Math.hypot(targetDx, targetDy);
+    if (distToNextPoint < 1) return { x: target.x, y: target.y }; // Target is at a waypoint, no velocity
+
+    const targetVelX = (targetDx / distToNextPoint) * target.speed;
+    const targetVelY = (targetDy / distToNextPoint) * target.speed;
+
+    const dx = target.x - shooterPos.x;
+    const dy = target.y - shooterPos.y;
+
+    const a = targetVelX * targetVelX + targetVelY * targetVelY - projectileSpeed * projectileSpeed;
+    const b = 2 * (targetVelX * dx + targetVelY * dy);
+    const c = dx * dx + dy * dy;
+
+    const discriminant = b * b - 4 * a * c;
+
+    if (discriminant < 0) {
+        return { x: target.x, y: target.y }; // No real solution, aim at current position
+    }
+
+    const t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
+    const t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
+
+    const timeToImpact = Math.min(t1 > 0 ? t1 : Infinity, t2 > 0 ? t2 : Infinity);
+
+    if (timeToImpact === Infinity) {
+        return { x: target.x, y: target.y }; // No positive solution
+    }
+
+    return {
+        x: target.x + targetVelX * timeToImpact,
+        y: target.y + targetVelY * timeToImpact
+    };
+}
+
+
 // ---------------------------- Global Projectile Function ----------------------------
 function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) {
     if (!isRapidFire) AudioManager.play('shoot');
     const isCrit = Math.random() * 100 < critChance;
     const finalDamage = damage * (isCrit ? 2.5 : 1.0);
     const spreadLevel = SkillManager.getSkillLevel('spreadShot');
+    const marksmanLevel = SkillManager.getSkillLevel('marksman');
+    const projectileSpeed = 500 + (SkillManager.getSkillLevel('legolas') * 50);
+
+    let finalTargetPos = { x: target.x, y: target.y };
+
+    if (marksmanLevel > 0) {
+        const predictedPos = predictInterception({ x, y }, target, projectileSpeed);
+        const accuracy = marksmanLevel / SkillTree.marksman.maxLevel; // 0.1 to 1.0
+        finalTargetPos.x = lerp(target.x, predictedPos.x, accuracy);
+        finalTargetPos.y = lerp(target.y, predictedPos.y, accuracy);
+    }
+    
     for (let i = 0; i < 1 + spreadLevel; i++) {
         let p = TDState.projectiles.find(pr => !pr.active);
         if (!p) { p = new Projectile(); TDState.projectiles.push(p); }
-        const dirX_base = target.x - x;
-        const dirY_base = target.y - y;
+        
+        const dirX_base = finalTargetPos.x - x;
+        const dirY_base = finalTargetPos.y - y;
         const baseAngle = Math.atan2(dirY_base, dirX_base);
         const angleOffset = (i > 0) ? (i % 2 === 0 ? -1 : 1) * Math.ceil(i/2) * 15 * (Math.PI / 180) : 0;
         const finalAngle = baseAngle + angleOffset;
+        
         const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
+        
         p.init(x, y, direction, finalDamage, isCrit);
     }
+
     if (!isRapidFire) {
         const color = isCrit ? '#ffeb3b' : '#e0e0ff';
         const font = isCrit ? 'bold 20px "Press Start 2P", cursive' : 'bold 16px "Orbitron", sans-serif';
@@ -498,6 +548,7 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
     }
 }
 
+// ... (The rest of the file remains unchanged) ...
 // ---------------------------- Upgrade Manager ----------------------------
 const UpgradeManager = {
     costs: { damage: 50, range: 60, fireRate: 80, crit: 120, castleHp: 1000 },
@@ -751,7 +802,7 @@ function initGame() {
     if (loadGame()) {
         document.getElementById('start-button').textContent = "Resume";
         document.getElementById('call-wave-button').style.display = 'block';
-        SkillManager.recalculateAllSkillEffects(); // Use the robust recalculation function
+        SkillManager.recalculateAllSkillEffects();
     } else { TDState.gold = 100 + MetaUpgrades.getBonus('startingGold'); }
     updateUI(); draw();
 }
