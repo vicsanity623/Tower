@@ -745,7 +745,9 @@ function renderSkillTree() {
                 <div class="skill-cost">Cost: ${SkillManager.getSkillCost(skill.id)}</div>
             `;
             if (isUnlocked && level < skill.maxLevel) {
-                node.onclick = () => SkillManager.purchaseSkill(skill.id);
+                node.addEventListener('click', () => {
+                    SkillManager.purchaseSkill(skill.id);
+                });
             }
             tierDiv.appendChild(node);
         });
