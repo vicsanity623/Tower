@@ -761,7 +761,11 @@ function openSkillsModal() {
 }
 function closeSkillsModal() {
     document.getElementById('skills-modal').style.display = 'none';
-    if (!TDState.gameOver && !TDState.betweenWaves) startGame();
+    // Always attempt to resume the game if it's not over.
+    // startGame() has its own internal checks to handle the state correctly.
+    if (!TDState.gameOver) {
+        startGame();
+    }
 }
 
 // ---------------------------- Save/Load System ----------------------------
