@@ -1,7 +1,9 @@
 /*
-    Vics Tower Defense - Revision 18 (UI State Hotfix)
-    - Fixed a bug where the "Call Wave" button would incorrectly appear after resuming or closing the skills panel.
-    - Simplified the startGame() function to only handle resuming the game loop, leaving UI state to the WaveManager.
+    Vics Tower Defense - Revision 18 (Open Field Update)
+    - Removed fixed path generation system.
+    - Enemies now spawn at random X coordinates at the top of the screen.
+    - Enemy movement AI is now a direct "straight-to-castle" vector.
+    - Implemented progressive enemy speed scaling, increasing every 20 waves.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -34,19 +36,8 @@ function setupCanvas() {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 }
 
-// ---------------------------- Game Path Generation ----------------------------
-const gamePath = [];
-const pathPresets = [
-    (w, h) => [{ x: w * 0.7, y: -50 }, { x: w * 0.7, y: h * 0.2 }, { x: w * 0.3, y: h * 0.4 }, { x: w * 0.3, y: h * 0.6 }, { x: w * 0.8, y: h * 0.8 }, { x: w * 0.8, y: h + 50 }],
-    (w, h) => [{ x: w * 0.5, y: -50 }, { x: w * 0.5, y: h * 0.1 }, { x: w * 0.2, y: h * 0.3 }, { x: w * 0.8, y: h * 0.5 }, { x: w * 0.2, y: h * 0.7 }, { x: w * 0.5, y: h + 50 }],
-    (w, h) => [{ x: w * 0.2, y: -50 }, { x: w * 0.2, y: h * 0.4 }, { x: w * 0.6, y: h * 0.5 }, { x: w * 0.6, y: h * 0.8 }, { x: w * 0.4, y: h + 50 }],
-    (w, h) => [{ x: w * 0.9, y: -50 }, { x: w * 0.9, y: h * 0.3 }, { x: w * 0.3, y: h * 0.4 }, { x: w * 0.3, y: h * 0.7 }, { x: w * 0.6, y: h + 50 }],
-];
-function generateNewPath() {
-    gamePath.length = 0;
-    const currentPathIndex = Math.floor(Math.random() * pathPresets.length);
-    gamePath.push(...pathPresets[currentPathIndex](canvasWidth, canvasHeight));
-}
+// ---------------------------- Game Path (DEPRECATED) ----------------------------
+// const gamePath = []; // No longer used
 
 // ---------------------------- Core Game State ----------------------------
 const TDState = {
@@ -220,7 +211,7 @@ class Castle {
     draw(ctx) {}
 }
 
-// ---------------------------- Enemy Class ----------------------------
+// ---------------------------- Enemy Class (PATCHED) ----------------------------
 const EnemyTypes = {
     NORMAL: { hp: 30, speed: 40, reward: 5, size: 20, color: '#ff6b6b' },
     TANK: { hp: 100, speed: 25, reward: 10, size: 30, color: '#4834d4' },
@@ -228,24 +219,46 @@ const EnemyTypes = {
     HEALER: { hp: 40, speed: 30, reward: 15, size: 22, color: '#feca57', special: 'HEAL' },
     SPLITTER: { hp: 50, speed: 35, reward: 8, size: 28, color: '#ff9ff3', special: 'SPLIT' }
 };
+
 class Enemy {
     constructor() { this.reset(); }
     reset() {
         this.active = false; this.type = null; this.x = 0; this.y = 0; this.hp = 1; this.maxHp = 1; this.speed = 20;
-        this.reward = 5; this.size = 20; this.pathIndex = 0; this.color = '#c75869'; this.special = null;
+        this.reward = 5; this.size = 20; this.color = '#c75869'; this.special = null;
         this.specialTimer = 0; this.stunnedUntil = 0; this.hitFlash = 0;
+        this.targetPos = {x: 0, y: 0}; // NEW: Store its destination
     }
-    init(type, waveModifier) {
-        this.active = true; this.type = type; this.x = gamePath[0].x; this.y = gamePath[0].y;
-        this.hp = type.hp * waveModifier; this.maxHp = this.hp; this.speed = type.speed; this.reward = type.reward;
-        this.size = type.size; this.color = type.color; this.special = type.special; this.pathIndex = 1; this.stunnedUntil = 0;
+    init(type, waveModifier, wave) {
+        this.active = true; this.type = type;
+        this.x = Math.random() * (canvasWidth - 40) + 20; // Random X spawn
+        this.y = -50 - Math.random() * 50; // Staggered Y spawn
+        this.hp = type.hp * waveModifier; this.maxHp = this.hp;
+        
+        // Progressive speed scaling
+        const speedBonus = Math.floor(wave / 20) * 0.1; // +10% speed every 20 waves
+        this.speed = type.speed * (1 + speedBonus);
+
+        this.reward = type.reward; this.size = type.size; this.color = type.color;
+        this.special = type.special; this.stunnedUntil = 0;
+
+        // Set a random destination along the bottom edge
+        this.targetPos.x = Math.random() * canvasWidth;
+        this.targetPos.y = canvasHeight + this.size;
     }
     update(dt) {
         if (!this.active) return; if (this.hitFlash > 0) this.hitFlash -= dt * 1000;
-        if (now() < this.stunnedUntil) return; if (this.pathIndex >= gamePath.length) { this.reachEnd(); return; }
-        const target = gamePath[this.pathIndex]; const dx = target.x - this.x, dy = target.y - this.y;
+        if (now() < this.stunnedUntil) return;
+        if (this.y > canvasHeight) { this.reachEnd(); return; }
+
+        const dx = this.targetPos.x - this.x;
+        const dy = this.targetPos.y - this.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < 1) { this.pathIndex++; } else { this.x += (dx / dist) * this.speed * dt; this.y += (dy / dist) * this.speed * dt; }
+
+        if (dist > 1) {
+            this.x += (dx / dist) * this.speed * dt;
+            this.y += (dy / dist) * this.speed * dt;
+        }
+
         if (this.special === 'HEAL') {
             this.specialTimer += dt * 1000;
             if (this.specialTimer > 3000) {
@@ -291,7 +304,7 @@ class Enemy {
         if (this.special === 'SPLIT') {
             for (let i = 0; i < 2; i++) {
                 let e = TDState.enemies.find(en => !en.active); if (!e) { e = new Enemy(); TDState.enemies.push(e); }
-                let childType = { ...EnemyTypes.NORMAL, size: 15, reward: 1 }; e.init(childType, 1);
+                let childType = { ...EnemyTypes.NORMAL, size: 15, reward: 1 }; e.init(childType, 1, TDState.wave);
                 e.x = this.x + (i * 20 - 10); e.y = this.y;
             }
         }
@@ -303,8 +316,12 @@ class Enemy {
 class Projectile {
     constructor() { this.active = false; }
     init(x, y, direction, damage, isCrit = false) {
-        this.active = true; this.x = x; this.y = y; this.direction = direction;
-        this.damage = damage; this.isCrit = isCrit; this.spawnTime = now();
+        this.active = true;
+        this.x = x; this.y = y;
+        this.direction = direction;
+        this.damage = damage;
+        this.isCrit = isCrit;
+        this.spawnTime = now();
         this.pierceLeft = SkillManager.getSkillLevel('piercingShot');
         this.hitEnemies = [];
     }
@@ -315,8 +332,13 @@ class Projectile {
         this.y += this.direction.y * projectileSpeed * dt;
         for (const e of TDState.enemies) {
             if (this.active && e.active && !this.hitEnemies.includes(e) && Math.hypot(this.x - e.x, this.y - e.y) < e.size / 2) {
-                e.takeDamage(this.damage); this.pierceLeft--; this.hitEnemies.push(e);
-                if (this.pierceLeft < 0) { this.active = false; break; }
+                e.takeDamage(this.damage);
+                this.pierceLeft--;
+                this.hitEnemies.push(e);
+                if (this.pierceLeft < 0) {
+                    this.active = false;
+                    break;
+                }
             }
         }
         if (this.x < -50 || this.x > canvasWidth + 50 || this.y < -50 || this.y > canvasHeight + 50) {
@@ -331,7 +353,11 @@ class Projectile {
     }
 }
 
-// ---------------------------- Hero and Follower Classes ----------------------------
+// ... (Hero, Follower, and other classes remain largely unchanged)
+// ... (The rest of the file is identical to the final version from the previous step)
+// ... (This is just a confirmation that the core logic is now based on the new Enemy AI)
+// The rest of the file is included below for completeness.
+
 class Hero {
     constructor() {
         this.x = canvasWidth / 2; this.y = canvasHeight * 0.8;
@@ -449,17 +475,11 @@ class Follower {
     }
 }
 
-// ---------------------------- Predictive Aiming Logic ----------------------------
 function predictInterception(shooterPos, target, projectileSpeed) {
-    if (target.pathIndex >= gamePath.length) return { x: target.x, y: target.y };
-    const nextPathPoint = gamePath[target.pathIndex];
-    const targetDx = nextPathPoint.x - target.x;
-    const targetDy = nextPathPoint.y - target.y;
-    const distToNextPoint = Math.hypot(targetDx, targetDy);
-    if (distToNextPoint < 1) return { x: target.x, y: target.y };
-
-    const targetVelX = (targetDx / distToNextPoint) * target.speed;
-    const targetVelY = (targetDy / distToNextPoint) * target.speed;
+    // Enemy has no velocity if it's at a waypoint (or in open field, its velocity is constant)
+    const targetVelX = (target.targetPos.x - target.x) / (Math.hypot(target.targetPos.x - target.x, target.targetPos.y - target.y) / target.speed);
+    const targetVelY = (target.targetPos.y - target.y) / (Math.hypot(target.targetPos.x - target.x, target.targetPos.y - target.y) / target.speed);
+    
     const dx = target.x - shooterPos.x;
     const dy = target.y - shooterPos.y;
     const a = targetVelX * targetVelX + targetVelY * targetVelY - projectileSpeed * projectileSpeed;
@@ -476,7 +496,6 @@ function predictInterception(shooterPos, target, projectileSpeed) {
     return { x: target.x + targetVelX * timeToImpact, y: target.y + targetVelY * timeToImpact };
 }
 
-// ---------------------------- Global Projectile Function ----------------------------
 function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) {
     if (!isRapidFire) AudioManager.play('shoot');
     const isCrit = Math.random() * 100 < critChance;
@@ -511,7 +530,6 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
     }
 }
 
-// ---------------------------- Upgrade Manager ----------------------------
 const UpgradeManager = {
     costs: { damage: 50, range: 60, fireRate: 80, crit: 120, castleHp: 1000 },
     levels: { damage: 0, range: 0, fireRate: 0, crit: 0, castleHp: 0 },
@@ -529,7 +547,6 @@ const UpgradeManager = {
     payForUpgrade(stat) { TDState.gold -= this.getCost(stat); this.levels[stat]++; }
 };
 
-// ---------------------------- Wave Manager ----------------------------
 class WaveManager {
     constructor() { this.reset(); }
     reset() {
@@ -539,7 +556,7 @@ class WaveManager {
     startNextWave() {
         if (this.spawning) return;
         TDState.betweenWaves = false; document.getElementById('call-wave-button').style.display = 'none';
-        generateNewPath(); this.wave++; TDState.wave = this.wave; this.generateWaveComposition();
+        this.wave++; TDState.wave = this.wave; this.generateWaveComposition();
         this.enemiesToSpawn = this.waveComposition.length; this.spawned = 0; this.spawnTimer = 0;
         this.spawning = true; this.spawnFinished = false; AudioManager.play('wave_start');
         floatingTextPool.get(`Wave ${this.wave}`, canvasWidth / 2, canvasHeight * 0.4, '#e0e0ff', 2000, 'bold 32px "Bangers", cursive');
@@ -570,7 +587,7 @@ class WaveManager {
             if (this.spawnTimer > interval && this.spawned < this.enemiesToSpawn) {
                 this.spawnTimer = 0; const enemyType = this.waveComposition[this.spawned]; this.spawned++;
                 let e = TDState.enemies.find(en => !en.active); if (!e) { e = new Enemy(); TDState.enemies.push(e); }
-                const waveModifier = 1 + this.wave * 0.15; e.init(enemyType, waveModifier);
+                const waveModifier = 1 + this.wave * 0.15; e.init(enemyType, waveModifier, this.wave);
             }
             if (this.spawned >= this.enemiesToSpawn) { this.spawning = false; this.spawnFinished = true; }
         }
@@ -581,7 +598,6 @@ class WaveManager {
     }
 }
 
-// ---------------------------- Main Game Loop ----------------------------
 let animationFrameId = null;
 function gameLoop(timestamp) {
     if (!TDState.running) return;
@@ -611,12 +627,6 @@ function draw() {
         const sy = (Math.random() - 0.5) * TDState.screenShake.intensity;
         ctx.translate(sx, sy);
     }
-    if (gamePath.length > 0) {
-        ctx.strokeStyle = "rgba(79, 79, 138, 0.4)"; ctx.lineWidth = 50;
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(gamePath[0].x, gamePath[0].y);
-        for (let i = 1; i < gamePath.length; i++) ctx.lineTo(gamePath[i].x, gamePath[i].y);
-        ctx.stroke(); ctx.strokeStyle = "rgba(255, 255, 255, 0.1)"; ctx.lineWidth = 2; ctx.stroke();
-    }
     TDState.castle.draw(ctx); TDState.hero.draw(ctx);
     if (TDState.follower) TDState.follower.draw(ctx);
     TDState.enemies.forEach(e => { if (e.active) e.draw(ctx); });
@@ -634,7 +644,6 @@ function draw() {
     ctx.restore();
 }
 
-// ---------------------------- UI Integration ----------------------------
 function updateUI() {
     document.getElementById('gold-display').textContent = `Gold: ${Math.floor(TDState.gold)}`;
     document.getElementById('wave-display').textContent = `Wave: ${TDState.wave}`;
@@ -724,7 +733,6 @@ function closeSkillsModal() {
     if (!TDState.gameOver) { startGame(); }
 }
 
-// ---------------------------- Save/Load System ----------------------------
 function saveGame() {
     const gameState = {
         gold: TDState.gold, wave: TDState.wave, kills: TDState.enemiesKilled, gems: TDState.gemsEarned,
@@ -756,7 +764,6 @@ function loadGame() {
 }
 function clearSave() { localStorage.removeItem(TD_CONFIG.saveKey); }
 
-// ---------------------------- Game Control ----------------------------
 function initGame() {
     setupCanvas(); MetaUpgrades.load(); TDState.castle = new Castle();
     TDState.hero = new Hero(); TDState.waveManager = new WaveManager(); 
@@ -821,7 +828,6 @@ function upgradeCastleHp() {
     updateUI();
 }
 
-// ---------------------------- Event Listeners ----------------------------
 function handleJoystickStart(e) {
     if (e.target !== canvas) return; e.preventDefault();
     joystick.active = true;
