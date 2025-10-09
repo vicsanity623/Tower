@@ -1,9 +1,7 @@
 /*
-    Vics Tower Defense - Revision 16 (Marksman Update)
-    - Added a new "Marksman" skill to the skill tree for predictive aiming.
-    - Implemented a 'predictInterception' function to calculate where a moving target will be.
-    - Upgrading the Marksman skill now progressively improves projectile accuracy against moving targets.
-    - Integrated the new aiming logic into the core shooting mechanics.
+    Vics Tower Defense - Revision 18 (UI State Hotfix)
+    - Fixed a bug where the "Call Wave" button would incorrectly appear after resuming or closing the skills panel.
+    - Simplified the startGame() function to only handle resuming the game loop, leaving UI state to the WaveManager.
 */
 
 // ---------------------------- Configuration ----------------------------
@@ -129,7 +127,7 @@ const AudioManager = {
 // ---------------------------- Utility & Object Pools ----------------------------
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function now() { return performance.now(); }
-function lerp(a, b, t) { return a * (1 - t) + b * t; } // Linear interpolation helper
+function lerp(a, b, t) { return a * (1 - t) + b * t; }
 
 const floatingTextPool = {
     pool: [],
@@ -189,17 +187,13 @@ const SkillManager = {
         const heroBase = { speed: 150, fireRate: 1.2 };
         TDState.hero.speed = heroBase.speed;
         TDState.hero.fireRate = heroBase.fireRate + (UpgradeManager.levels.fireRate * 0.15);
-        
         const legolasLevels = this.getSkillLevel('legolas');
         if (legolasLevels > 0) TDState.hero.fireRate += 0.5 * legolasLevels;
-
         const godSpeedLevels = this.getSkillLevel('godSpeed');
-        if (godSpeedLevels > 0) TDState.hero.speed = Math.min(MAXS.HERO_SPEED, TDState.hero.speed + (10 * godSpeedLevels));
-
+        if (godSpeedLevels > 0) TDState.hero.speed = Math.min(MAXS.HERO_SPEED, heroBase.speed + (10 * godSpeedLevels));
         if (this.getSkillLevel('follower') > 0 && !TDState.follower) {
             TDState.follower = new Follower(TDState.hero);
         }
-        
         TDState.hero.fireRate = Math.min(MAXS.HERO_FIRE_RATE, TDState.hero.fireRate);
     }
 };
@@ -234,7 +228,6 @@ const EnemyTypes = {
     HEALER: { hp: 40, speed: 30, reward: 15, size: 22, color: '#feca57', special: 'HEAL' },
     SPLITTER: { hp: 50, speed: 35, reward: 8, size: 28, color: '#ff9ff3', special: 'SPLIT' }
 };
-
 class Enemy {
     constructor() { this.reset(); }
     reset() {
@@ -310,12 +303,8 @@ class Enemy {
 class Projectile {
     constructor() { this.active = false; }
     init(x, y, direction, damage, isCrit = false) {
-        this.active = true;
-        this.x = x; this.y = y;
-        this.direction = direction;
-        this.damage = damage;
-        this.isCrit = isCrit;
-        this.spawnTime = now();
+        this.active = true; this.x = x; this.y = y; this.direction = direction;
+        this.damage = damage; this.isCrit = isCrit; this.spawnTime = now();
         this.pierceLeft = SkillManager.getSkillLevel('piercingShot');
         this.hitEnemies = [];
     }
@@ -326,13 +315,8 @@ class Projectile {
         this.y += this.direction.y * projectileSpeed * dt;
         for (const e of TDState.enemies) {
             if (this.active && e.active && !this.hitEnemies.includes(e) && Math.hypot(this.x - e.x, this.y - e.y) < e.size / 2) {
-                e.takeDamage(this.damage);
-                this.pierceLeft--;
-                this.hitEnemies.push(e);
-                if (this.pierceLeft < 0) {
-                    this.active = false;
-                    break;
-                }
+                e.takeDamage(this.damage); this.pierceLeft--; this.hitEnemies.push(e);
+                if (this.pierceLeft < 0) { this.active = false; break; }
             }
         }
         if (this.x < -50 || this.x > canvasWidth + 50 || this.y < -50 || this.y > canvasHeight + 50) {
@@ -351,8 +335,7 @@ class Projectile {
 class Hero {
     constructor() {
         this.x = canvasWidth / 2; this.y = canvasHeight * 0.8;
-        this.speed = 150;
-        this.damage = 25; this.range = 180; this.fireRate = 1.2;
+        this.speed = 150; this.damage = 25; this.range = 180; this.fireRate = 1.2;
         this.crit = 5 + MetaUpgrades.getBonus('critChance');
         this.lastShot = 0; this.muzzleFlash = 0; this.repairTimer = 0;
     }
@@ -466,47 +449,32 @@ class Follower {
     }
 }
 
-// ---------------------------- NEW: Predictive Aiming Logic ----------------------------
+// ---------------------------- Predictive Aiming Logic ----------------------------
 function predictInterception(shooterPos, target, projectileSpeed) {
     if (target.pathIndex >= gamePath.length) return { x: target.x, y: target.y };
-
     const nextPathPoint = gamePath[target.pathIndex];
     const targetDx = nextPathPoint.x - target.x;
     const targetDy = nextPathPoint.y - target.y;
     const distToNextPoint = Math.hypot(targetDx, targetDy);
-    if (distToNextPoint < 1) return { x: target.x, y: target.y }; // Target is at a waypoint, no velocity
+    if (distToNextPoint < 1) return { x: target.x, y: target.y };
 
     const targetVelX = (targetDx / distToNextPoint) * target.speed;
     const targetVelY = (targetDy / distToNextPoint) * target.speed;
-
     const dx = target.x - shooterPos.x;
     const dy = target.y - shooterPos.y;
-
     const a = targetVelX * targetVelX + targetVelY * targetVelY - projectileSpeed * projectileSpeed;
     const b = 2 * (targetVelX * dx + targetVelY * dy);
     const c = dx * dx + dy * dy;
-
     const discriminant = b * b - 4 * a * c;
 
-    if (discriminant < 0) {
-        return { x: target.x, y: target.y }; // No real solution, aim at current position
-    }
-
+    if (discriminant < 0) return { x: target.x, y: target.y };
     const t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
     const t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
-
     const timeToImpact = Math.min(t1 > 0 ? t1 : Infinity, t2 > 0 ? t2 : Infinity);
 
-    if (timeToImpact === Infinity) {
-        return { x: target.x, y: target.y }; // No positive solution
-    }
-
-    return {
-        x: target.x + targetVelX * timeToImpact,
-        y: target.y + targetVelY * timeToImpact
-    };
+    if (timeToImpact === Infinity) return { x: target.x, y: target.y };
+    return { x: target.x + targetVelX * timeToImpact, y: target.y + targetVelY * timeToImpact };
 }
-
 
 // ---------------------------- Global Projectile Function ----------------------------
 function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) {
@@ -518,10 +486,9 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
     const projectileSpeed = 500 + (SkillManager.getSkillLevel('legolas') * 50);
 
     let finalTargetPos = { x: target.x, y: target.y };
-
     if (marksmanLevel > 0) {
         const predictedPos = predictInterception({ x, y }, target, projectileSpeed);
-        const accuracy = marksmanLevel / SkillTree.marksman.maxLevel; // 0.1 to 1.0
+        const accuracy = marksmanLevel / SkillTree.marksman.maxLevel;
         finalTargetPos.x = lerp(target.x, predictedPos.x, accuracy);
         finalTargetPos.y = lerp(target.y, predictedPos.y, accuracy);
     }
@@ -529,18 +496,14 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
     for (let i = 0; i < 1 + spreadLevel; i++) {
         let p = TDState.projectiles.find(pr => !pr.active);
         if (!p) { p = new Projectile(); TDState.projectiles.push(p); }
-        
         const dirX_base = finalTargetPos.x - x;
         const dirY_base = finalTargetPos.y - y;
         const baseAngle = Math.atan2(dirY_base, dirX_base);
         const angleOffset = (i > 0) ? (i % 2 === 0 ? -1 : 1) * Math.ceil(i/2) * 15 * (Math.PI / 180) : 0;
         const finalAngle = baseAngle + angleOffset;
-        
         const direction = { x: Math.cos(finalAngle), y: Math.sin(finalAngle) };
-        
         p.init(x, y, direction, finalDamage, isCrit);
     }
-
     if (!isRapidFire) {
         const color = isCrit ? '#ffeb3b' : '#e0e0ff';
         const font = isCrit ? 'bold 20px "Press Start 2P", cursive' : 'bold 16px "Orbitron", sans-serif';
@@ -548,7 +511,6 @@ function shootProjectile(x, y, target, damage, critChance, isRapidFire = false) 
     }
 }
 
-// ... (The rest of the file remains unchanged) ...
 // ---------------------------- Upgrade Manager ----------------------------
 const UpgradeManager = {
     costs: { damage: 50, range: 60, fireRate: 80, crit: 120, castleHp: 1000 },
@@ -745,9 +707,7 @@ function renderSkillTree() {
                 <div class="skill-cost">Cost: ${SkillManager.getSkillCost(skill.id)}</div>
             `;
             if (isUnlocked && level < skill.maxLevel) {
-                node.addEventListener('click', () => {
-                    SkillManager.purchaseSkill(skill.id);
-                });
+                node.addEventListener('click', () => SkillManager.purchaseSkill(skill.id));
             }
             tierDiv.appendChild(node);
         });
@@ -761,11 +721,7 @@ function openSkillsModal() {
 }
 function closeSkillsModal() {
     document.getElementById('skills-modal').style.display = 'none';
-    // Always attempt to resume the game if it's not over.
-    // startGame() has its own internal checks to handle the state correctly.
-    if (!TDState.gameOver) {
-        startGame();
-    }
+    if (!TDState.gameOver) { startGame(); }
 }
 
 // ---------------------------- Save/Load System ----------------------------
@@ -819,7 +775,7 @@ function startGame() {
     document.getElementById('pause-button').style.display = 'block';
     TDState.lastTime = performance.now();
     if (TDState.wave === 0) { TDState.waveManager.startNextWave(); } 
-    else { TDState.betweenWaves = true; document.getElementById('call-wave-button').style.display = 'block'; }
+    else if(TDState.betweenWaves) { document.getElementById('call-wave-button').style.display = 'block'; }
     gameLoop(TDState.lastTime);
 }
 function pauseGame(isModalOpen = false) {
